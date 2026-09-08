@@ -100,6 +100,106 @@ class DataStore:
             "closedSocialLoops": closed_loops,
         }
 
+    async def risk_factors_for_case(self, case_id: str, db: AsyncSession) -> dict:
+        if await db.get(Case, case_id) is None:
+            raise HTTPException(status_code=404, detail="Case not found.")
+
+        cdr = list(await db.scalars(select(CdrRecord).where(CdrRecord.case_id == case_id)))
+        ipdr = list(await db.scalars(select(IpdrRecord).where(IpdrRecord.case_id == case_id)))
+        banking = list(await db.scalars(select(BankingRecord).where(BankingRecord.case_id == case_id)))
+        social = list(await db.scalars(select(SocialRecord).where(SocialRecord.case_id == case_id)))
+        records = cdr + ipdr + banking + social
+
+        incoming: dict[tuple[str, str], set[tuple[str, str]]] = {}
+        activity: dict[tuple[str, str], list] = {}
+        locations: dict[tuple[float, float], list[tuple[object, tuple[str, str]]]] = {}
+        devices: dict[str, set[tuple[str, str]]] = {}
+
+        def add_relationship(dataset: str, source: str, target: str, timestamp, attributes: dict) -> None:
+            source_id = (dataset, source)
+            target_id = (dataset, target)
+            incoming.setdefault(target_id, set()).add(source_id)
+            activity.setdefault(source_id, []).append(timestamp)
+            activity.setdefault(target_id, []).append(timestamp)
+            latitude = attributes.get("latitude")
+            longitude = attributes.get("longitude")
+            if latitude is not None and longitude is not None:
+                try:
+                    location = (round(float(latitude), 4), round(float(longitude), 4))
+                    locations.setdefault(location, []).append((timestamp, source_id))
+                    locations.setdefault(location, []).append((timestamp, target_id))
+                except (TypeError, ValueError):
+                    pass
+            for key in ("imei", "device_id"):
+                device_id = attributes.get(key)
+                if device_id:
+                    devices.setdefault(str(device_id), set()).update((source_id, target_id))
+
+        for row in cdr:
+            add_relationship("cdr", row.caller, row.callee, row.timestamp, row.attributes or {})
+        for row in ipdr:
+            add_relationship("ipdr", row.source_ip, row.destination_ip, row.timestamp, row.attributes or {})
+        for row in banking:
+            add_relationship("banking", row.sender, row.recipient, row.timestamp, row.attributes or {})
+        for row in social:
+            add_relationship("social", row.actor, row.target, row.timestamp, row.attributes or {})
+
+        factors = []
+        positive_fan_in = [len(counterparties) for counterparties in incoming.values() if counterparties]
+        average_incoming = sum(positive_fan_in) / len(positive_fan_in) if positive_fan_in else 0
+        factors.append({
+            "label": "Fan-in severity",
+            "score": round(min(100, average_incoming / 10 * 100)),
+        })
+
+        reactivated = 0
+        for timestamps in activity.values():
+            ordered = sorted(timestamps)
+            if any(ordered[index + 1] - ordered[index] >= timedelta(hours=24) for index in range(len(ordered) - 1)):
+                reactivated += 1
+        active_entities = len(activity)
+        factors.append({
+            "label": "Dormant reactivation",
+            "score": round(reactivated / active_entities * 100) if active_entities else 0,
+        })
+
+        location_score = 0
+        for entries in locations.values():
+            entries.sort(key=lambda item: item[0])
+            for index, (timestamp, _) in enumerate(entries):
+                participants = {
+                    entity
+                    for other_timestamp, entity in entries[index:]
+                    if other_timestamp - timestamp <= timedelta(minutes=30)
+                }
+                location_score = max(location_score, min(100, (len(participants) - 1) / 4 * 100))
+        if locations:
+            factors.append({"label": "Location co-occurrence", "score": round(location_score)})
+
+        if devices:
+            max_shared = max(len(shared_entities) for shared_entities in devices.values())
+            factors.append({
+                "label": "Device sharing",
+                "score": round(min(100, (max_shared - 1) / 4 * 100)),
+            })
+
+        if social:
+            social_activity = sorted((row.timestamp, row.actor) for row in social)
+            max_synchronized = 1
+            for index, (timestamp, _) in enumerate(social_activity):
+                actors = {
+                    actor
+                    for other_timestamp, actor in social_activity[index:]
+                    if other_timestamp - timestamp <= timedelta(minutes=15)
+                }
+                max_synchronized = max(max_synchronized, len(actors))
+            factors.append({
+                "label": "Coordinated messaging",
+                "score": round(min(100, (max_synchronized - 1) / 4 * 100)),
+            })
+
+        return {"riskFactors": factors}
+
     async def provenance_for_claim(self, claim_id: str, db: AsyncSession) -> dict:
         claim = next((item for item in self.story_claims if item.id == claim_id), None)
         requested_ids = claim.evidenceIds if claim else [claim_id]

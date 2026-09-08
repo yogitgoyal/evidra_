@@ -2,19 +2,7 @@
 
 import { Card, SectionLabel, Badge } from "@/components/ui/primitives";
 import { TrendingUp } from "lucide-react";
-
-interface RiskFactor {
-  label: string;
-  score: number;
-}
-
-const factors: RiskFactor[] = [
-  { label: "Fan-in severity",        score: 92 },
-  { label: "Dormant reactivation",   score: 85 },
-  { label: "Location co-occurrence", score: 78 },
-  { label: "Device sharing",         score: 64 },
-  { label: "Coordinated messaging",  score: 45 },
-];
+import type { RiskFactor } from "@/lib/api";
 
 // Severity thresholds — must match legend and bars exactly
 function severityColor(score: number): string {
@@ -27,10 +15,25 @@ const GRID_COLOR   = "#E2E6EE";
 const SHAPE_FILL   = "rgba(100, 116, 139, 0.08)"; // neutral very-light fill
 const SHAPE_STROKE = "#94A3B8";                    // neutral gray outline — dots carry all color
 
-export function RiskRadarChart({ riskScore = 87 }: { riskScore?: number }) {
+export function RiskRadarChart({
+  riskScore = 87,
+  factors,
+  loading = false,
+}: {
+  riskScore?: number;
+  factors: RiskFactor[];
+  loading?: boolean;
+}) {
   const center     = 115;
   const radius     = 82;
   const numFactors = factors.length;
+
+  if (loading) {
+    return <Card className="p-6 text-sm text-text-dim">Loading risk breakdown…</Card>;
+  }
+  if (factors.length < 2) {
+    return <Card className="p-6 text-sm text-text-dim">Not enough data for risk breakdown.</Card>;
+  }
 
   function getCoordinates(index: number, score: number) {
     const angle = (Math.PI * 2 / numFactors) * index - Math.PI / 2;

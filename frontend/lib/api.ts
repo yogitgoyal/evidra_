@@ -256,6 +256,15 @@ export function getGraph(caseId: string): Promise<GraphApiResponse> {
   return request(`/cases/${caseId}/graph`);
 }
 
+export interface RiskFactor {
+  label: string;
+  score: number;
+}
+
+export function getRiskFactors(caseId: string): Promise<{ riskFactors: RiskFactor[] }> {
+  return request(`/cases/${caseId}/risk-factors`);
+}
+
 export function getTimeline(caseId: string): Promise<TimelineEvent[]> {
   return request(`/cases/${caseId}/timeline`);
 }

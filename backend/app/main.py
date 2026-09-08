@@ -129,6 +129,10 @@ def get_dashboard_activity():
 async def get_graph(case_id: str, db: AsyncSession = Depends(get_db)):
     return await store.graph_for_case(case_id, db)
 
+@app.get("/cases/{case_id}/risk-factors", dependencies=[Depends(require_officer)])
+async def get_risk_factors(case_id: str, db: AsyncSession = Depends(get_db)):
+    return await store.risk_factors_for_case(case_id, db)
+
 @app.get("/cases/{case_id}/timeline", dependencies=[Depends(require_officer)])
 async def get_timeline(case_id: str, db: AsyncSession = Depends(get_db)):
     return await store.timeline_for_case(case_id, db)

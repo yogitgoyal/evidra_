@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { Landmark } from "lucide-react";
 import { getFinancial } from "@/lib/api";
 import { Card, SectionLabel } from "@/components/ui/primitives";
+import { FinancialFlowGraph } from "@/components/graph/FinancialFlowGraph";
 
 export default function FinancialFlowPage() {
   const params = useParams();
@@ -32,14 +33,10 @@ export default function FinancialFlowPage() {
         <SectionLabel className="mb-4">LIVE FINANCIAL FLOW</SectionLabel>
         {!flow ? <p className="text-sm text-text-dim">Loading banking records…</p> : flow.links.length === 0 ? (
           <p className="text-sm text-text-dim">No banking records for this case.</p>
+        ) : transactions.length < 2 ? (
+          <p className="text-sm text-text-dim">Not enough banking records to draw a flow graph.</p>
         ) : (
-          <div className="flex flex-wrap gap-3">
-            {flow.links.map((link) => (
-              <div key={`${link.source}-${link.target}-${link.value}`} className="rounded-lg border border-cyan/30 bg-cyan/5 px-4 py-3 text-sm">
-                {link.source} → {link.target}: ₹{link.value.toLocaleString("en-IN")}
-              </div>
-            ))}
-          </div>
+          <FinancialFlowGraph nodes={flow.nodes} links={flow.links} transactions={transactions} />
         )}
       </Card>
       <Card className="p-6">

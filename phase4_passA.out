@@ -1,0 +1,5 @@
+INFO:     127.0.0.1:49902 - "POST /auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49902 - "POST /cases/demo-seed HTTP/1.1" 201 Created
+INFO:     127.0.0.1:49902 - "GET /cases HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49902 - "GET /cases/ HTTP/1.1" 307 Temporary Redirect
+INFO:     127.0.0.1:49902 - "GET /cases HTTP/1.1" 401 Unauthorized

@@ -17,6 +17,7 @@ from app.models.datasets import EvidenceRecordRow
 from app.reports import REPORTS_DIR, build_report
 from app.routes.auth import router as auth_router
 from app.routes.banking import router as banking_router
+from app.routes.bulk_ingest import router as bulk_ingest_router
 from app.routes.cases import router as cases_router
 from app.routes.cdr import router as cdr_router
 from app.routes.identity import router as identity_router
@@ -27,6 +28,7 @@ from app.store import store
 load_dotenv()
 
 app = FastAPI()
+app.include_router(bulk_ingest_router, dependencies=[Depends(require_officer)])
 app.include_router(cases_router, dependencies=[Depends(require_officer)])
 app.include_router(cdr_router, dependencies=[Depends(require_officer)])
 app.include_router(auth_router)

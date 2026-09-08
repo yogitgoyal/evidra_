@@ -1,0 +1,14 @@
+INFO:     127.0.0.1:56101 - "POST /auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "POST /cases/demo-seed HTTP/1.1" 201 Created
+INFO:     127.0.0.1:56101 - "GET /cases HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /cases/09a9de1c-81b6-476e-a048-f0e7eef38aa9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /cases/09a9de1c-81b6-476e-a048-f0e7eef38aa9/graph HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /cases/09a9de1c-81b6-476e-a048-f0e7eef38aa9/timeline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /cases/09a9de1c-81b6-476e-a048-f0e7eef38aa9/financial HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /cases/09a9de1c-81b6-476e-a048-f0e7eef38aa9/geo HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /cases/09a9de1c-81b6-476e-a048-f0e7eef38aa9/story HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /cases/09a9de1c-81b6-476e-a048-f0e7eef38aa9/evidence HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /cases/09a9de1c-81b6-476e-a048-f0e7eef38aa9/copilot HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /cases/09a9de1c-81b6-476e-a048-f0e7eef38aa9/report HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /cases/09a9de1c-81b6-476e-a048-f0e7eef38aa9/investigate_all HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /cases/09a9de1c-81b6-476e-a048-f0e7eef38aa9/audit HTTP/1.1" 500 Internal Server Error

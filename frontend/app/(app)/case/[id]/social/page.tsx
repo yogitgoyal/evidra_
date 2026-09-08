@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { createSocial, listSocial, SocialRecord } from "@/lib/api";
+import { createSocial, listSocial, SocialRecord, uploadSocialBulk, BulkUploadResponse } from "@/lib/api";
 
 export default function CaseSocialPage() {
   const params = useParams();
@@ -16,6 +16,9 @@ export default function CaseSocialPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [records, setRecords] = useState<SocialRecord[]>([]);
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkResult, setBulkResult] = useState<BulkUploadResponse | null>(null);
 
   async function loadRecords() {
     try {
@@ -36,6 +39,7 @@ export default function CaseSocialPage() {
       setError("Both actor and target are required.");
       return;
     }
+
     setLoading(true);
     setError(null);
     try {
@@ -52,6 +56,27 @@ export default function CaseSocialPage() {
       setError("Failed to add record. Check that the backend is running.");
     } finally {
       setLoading(false);
+    }
+
+  }
+
+  async function handleBulkSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!bulkFile) {
+      setError("Choose a CSV file first.");
+      return;
+    }
+    setBulkLoading(true);
+    setError(null);
+    setBulkResult(null);
+    try {
+      setBulkResult(await uploadSocialBulk(caseId, bulkFile));
+      setBulkFile(null);
+      await loadRecords();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Bulk social upload failed.");
+    } finally {
+      setBulkLoading(false);
     }
   }
 
@@ -112,6 +137,35 @@ export default function CaseSocialPage() {
         >
           {loading ? "Adding..." : "Add Record"}
         </button>
+      </form>
+
+      <form onSubmit={handleBulkSubmit} className="space-y-4 rounded-xl border border-cyan/30 bg-surface p-6">
+        <div>
+          <h2 className="text-sm font-semibold text-text">Bulk CSV upload</h2>
+          <p className="mt-1 text-xs text-text-faint">Columns: actor, target, platform, interaction, timestamp</p>
+        </div>
+        <input
+          type="file"
+          accept=".csv,text/csv"
+          onChange={(e) => setBulkFile(e.target.files?.[0] ?? null)}
+          className="block w-full text-sm text-text-faint"
+        />
+        <button type="submit" disabled={bulkLoading} className="rounded-lg border border-cyan px-4 py-2 text-sm font-medium text-cyan disabled:opacity-50">
+          {bulkLoading ? "Uploading..." : "Upload CSV"}
+        </button>
+        {bulkResult && (
+          <div className="space-y-2 text-sm text-text">
+            <p>{bulkResult.created} records added, {bulkResult.rejected.length} rejected.</p>
+            {bulkResult.rejected.length > 0 && (
+              <details>
+                <summary className="cursor-pointer text-text-faint">Rejected rows</summary>
+                <ul className="mt-2 list-disc pl-5 text-red-400">
+                  {bulkResult.rejected.map((item) => <li key={item.row}>Row {item.row}: {item.reason}</li>)}
+                </ul>
+              </details>
+            )}
+          </div>
+        )}
       </form>
 
       <div>

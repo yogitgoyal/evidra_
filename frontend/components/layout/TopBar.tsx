@@ -23,20 +23,18 @@ export function TopBar() {
   const [currentCase, setCurrentCase] = useState<CaseApiResponse | null>(null);
 
   useEffect(() => {
-    if (!caseId) {
-      setCurrentCase(null);
-      return;
-    }
+    if (!caseId) return;
     getCase(caseId).then(setCurrentCase).catch(() => setCurrentCase(null));
   }, [caseId]);
 
+  const displayedCase = currentCase?.id === caseId ? currentCase : null;
   let crumb: React.ReactNode = "Command Center";
   if (pathname === "/dashboard") crumb = "Command Center";
   else if (caseId) {
     const seg = pathname.split(`/case/${caseId}`)[1]?.replace("/", "") ?? "";
     crumb = (
       <span className="flex items-center gap-1.5">
-        <span className="text-text-dim">{currentCase?.title ?? currentCase?.name ?? `Case #${caseId}`}</span>
+        <span className="text-text-dim">{displayedCase?.title ?? displayedCase?.name ?? `Case #${caseId}`}</span>
         <ChevronRight size={13} className="text-text-faint" />
         <span className="font-semibold text-text">{routeLabels[seg] ?? "Overview"}</span>
       </span>

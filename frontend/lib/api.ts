@@ -143,6 +143,22 @@ export function listCdr(caseId: string): Promise<CdrRecord[]> {
   return request(`/cases/${caseId}/cdr`);
 }
 
+export interface BulkUploadResponse {
+  created: number;
+  rejected: Array<{ row: number; reason: string }>;
+  sample_ids: string[];
+}
+
+async function uploadBulk(path: string, file: File): Promise<BulkUploadResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  return request(path, { method: "POST", body: form });
+}
+
+export function uploadCdrBulk(caseId: string, file: File): Promise<BulkUploadResponse> {
+  return uploadBulk(`/cases/${caseId}/cdr/bulk`, file);
+}
+
 export interface IpdrRecord {
   id: string;
   case_id: string;
@@ -198,6 +214,10 @@ export function listBanking(caseId: string): Promise<BankingRecord[]> {
   return request(`/cases/${caseId}/banking`);
 }
 
+export function uploadBankingBulk(caseId: string, file: File): Promise<BulkUploadResponse> {
+  return uploadBulk(`/cases/${caseId}/banking/bulk`, file);
+}
+
 export interface SocialCreatePayload {
   actor: string;
   target: string;
@@ -221,6 +241,10 @@ export function createSocial(caseId: string, payload: SocialCreatePayload): Prom
 }
 export function listSocial(caseId: string): Promise<SocialRecord[]> {
   return request(`/cases/${caseId}/social`);
+}
+
+export function uploadSocialBulk(caseId: string, file: File): Promise<BulkUploadResponse> {
+  return uploadBulk(`/cases/${caseId}/social/bulk`, file);
 }
 
 export interface GraphApiResponse {

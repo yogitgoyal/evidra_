@@ -242,9 +242,10 @@ class DataStore:
         if db:
             cdr = list(await db.scalars(select(CdrRecord).where(CdrRecord.case_id == case_id)))
             ipdr = list(await db.scalars(select(IpdrRecord).where(IpdrRecord.case_id == case_id)))
+            banking = list(await db.scalars(select(BankingRecord).where(BankingRecord.case_id == case_id)))
             social = list(await db.scalars(select(SocialRecord).where(SocialRecord.case_id == case_id)))
-            if cdr or ipdr or social:
-                evidence_ids = await self._ensure_provenance(db, case_id, cdr + ipdr + social, "graph_edge")
+            if cdr or ipdr or social or banking:
+                evidence_ids = await self._ensure_provenance(db, case_id, cdr + ipdr + banking + social, "graph_edge")
                 entities = {}
                 edges = []
                 identity_phones = {}
@@ -269,6 +270,10 @@ class DataStore:
                 for row in ipdr:
                     add_entity(row.source_ip, "ip", row.source_ip); add_entity(row.destination_ip, "ip", row.destination_ip)
                     edges.append(GraphEdge(id=row.id, source=row.source_ip, target=row.destination_ip, kind="MESSAGED", confidence="high", weight=3 if row.source_ip in shared_ips or row.destination_ip in shared_ips else 1, evidenceId=evidence_ids[row.id], evidenceIds=[evidence_ids[row.id]]))
+                for row in banking:
+                    sender_id, recipient_id = f"account:{row.sender}", f"account:{row.recipient}"
+                    add_entity(sender_id, "account", row.sender); add_entity(recipient_id, "account", row.recipient)
+                    edges.append(GraphEdge(id=row.id, source=sender_id, target=recipient_id, kind="TRANSFERRED_TO", confidence="high", weight=1, evidenceId=evidence_ids[row.id], evidenceIds=[evidence_ids[row.id]]))
                 for row in social:
                     add_entity(row.actor, "social", row.actor); add_entity(row.target, "social", row.target)
                     edges.append(GraphEdge(id=row.id, source=row.actor, target=row.target, kind="MENTIONED", confidence="high", weight=3 if (row.target, row.actor) in social_links else 1, evidenceId=evidence_ids[row.id], evidenceIds=[evidence_ids[row.id]]))

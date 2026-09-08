@@ -465,7 +465,10 @@ class DataStore:
             try:
                 case = await db.get(Case, case_id)
             except Exception:
-                case = None
+                raise HTTPException(
+                    status_code=503,
+                    detail="Database temporarily unavailable.",
+                )
         if case is None:
             case = next((c for c in self.cases if c.id == case_id), None)
         if case is None:
@@ -524,7 +527,10 @@ class DataStore:
             try:
                 case = await db.get(Case, case_id)
             except Exception:
-                case = None
+                raise HTTPException(
+                    status_code=503,
+                    detail="Database temporarily unavailable.",
+                )
         if case is None:
             case = next((c for c in self.cases if c.id == case_id), None)
         if case is None:
@@ -535,7 +541,10 @@ class DataStore:
             try:
                 raw_claims = (await self.story_claims_for_case(case_id, db))["claims"]
             except Exception:
-                raw_claims = []
+                raise HTTPException(
+                    status_code=503,
+                    detail="Database temporarily unavailable.",
+                )
         if not raw_claims:
             raw_claims = [
                 {

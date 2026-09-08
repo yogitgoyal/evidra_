@@ -17,6 +17,7 @@ export default function CaseBankingPage() {
   const [error, setError] = useState<string | null>(null);
   const [records, setRecords] = useState<BankingRecord[]>([]);
   const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [bulkText, setBulkText] = useState("");
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkResult, setBulkResult] = useState<BulkUploadResponse | null>(null);
 
@@ -63,16 +64,24 @@ export default function CaseBankingPage() {
 
   async function handleBulkSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!bulkFile) {
-      setError("Choose a CSV file first.");
+    if (!bulkFile && !bulkText.trim()) {
+      setError("Choose a CSV file or paste CSV content first.");
       return;
     }
     setBulkLoading(true);
     setError(null);
     setBulkResult(null);
     try {
-      setBulkResult(await uploadBankingBulk(caseId, bulkFile));
+      const uploadFile = bulkText.trim()
+        ? new File([bulkText], "pasted.csv", { type: "text/csv" })
+        : bulkFile;
+      if (!uploadFile) {
+        setError("Choose a CSV file or paste CSV content first.");
+        return;
+      }
+      setBulkResult(await uploadBankingBulk(caseId, uploadFile));
       setBulkFile(null);
+      setBulkText("");
       await loadRecords();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bulk banking upload failed.");
@@ -151,7 +160,14 @@ export default function CaseBankingPage() {
           onChange={(e) => setBulkFile(e.target.files?.[0] ?? null)}
           className="block w-full text-sm text-text-faint"
         />
-        <button type="submit" disabled={bulkLoading} className="rounded-lg border border-cyan px-4 py-2 text-sm font-medium text-cyan disabled:opacity-50">
+         <textarea
+           value={bulkText}
+           onChange={(e) => setBulkText(e.target.value)}
+           placeholder="Or paste CSV content here"
+           rows={6}
+           className="w-full rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text outline-none focus:border-cyan/50"
+         />
+         <button type="submit" disabled={bulkLoading} className="rounded-lg border border-cyan px-4 py-2 text-sm font-medium text-cyan disabled:opacity-50">
           {bulkLoading ? "Uploading..." : "Upload CSV"}
         </button>
         {bulkResult && (

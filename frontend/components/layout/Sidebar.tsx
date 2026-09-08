@@ -17,6 +17,8 @@ import {
   BotMessageSquare,
   FileSearch,
   FileOutput,
+  Wallet,
+  Users2,
   ChevronLeft,
   FolderOpen,
   LogOut,
@@ -32,6 +34,8 @@ const caseTabs = [
   { href: "/evidence", label: "Evidence Viewer", icon: FileSearch },
   { href: "/report", label: "Report Generator", icon: FileOutput },
   { href: "/data", label: "CDR Records", icon: FileSearch },
+  { href: "/banking", label: "Banking Records", icon: Wallet },
+  { href: "/social", label: "Social Records", icon: Users2 },
   { href: "/ipdr", label: "IPDR Records", icon: FileSearch },
   { href: "/identity", label: "Identity Records", icon: FileSearch },
 ];

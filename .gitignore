@@ -9,6 +9,9 @@ backend/venv/
 .env.test.local
 .env.production.local
 *.log
+*.sqlite3
+*.err
+*.out
 
 backend/*.sqlite3
 backend/*.sqlite

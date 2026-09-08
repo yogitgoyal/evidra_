@@ -1,6 +1,8 @@
 "use client";
 
 import { usePathname, useParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { CaseApiResponse, getCase } from "@/lib/api";
 import { Search, Bell, Settings, ChevronRight, Calendar, ChevronDown } from "lucide-react";
 
 const routeLabels: Record<string, string> = {
@@ -18,6 +20,15 @@ export function TopBar() {
   const pathname = usePathname();
   const params = useParams();
   const caseId = params?.id as string | undefined;
+  const [currentCase, setCurrentCase] = useState<CaseApiResponse | null>(null);
+
+  useEffect(() => {
+    if (!caseId) {
+      setCurrentCase(null);
+      return;
+    }
+    getCase(caseId).then(setCurrentCase).catch(() => setCurrentCase(null));
+  }, [caseId]);
 
   let crumb: React.ReactNode = "Command Center";
   if (pathname === "/dashboard") crumb = "Command Center";
@@ -25,7 +36,7 @@ export function TopBar() {
     const seg = pathname.split(`/case/${caseId}`)[1]?.replace("/", "") ?? "";
     crumb = (
       <span className="flex items-center gap-1.5">
-        <span className="text-text-dim">Case #{caseId}</span>
+        <span className="text-text-dim">{currentCase?.title ?? currentCase?.name ?? `Case #${caseId}`}</span>
         <ChevronRight size={13} className="text-text-faint" />
         <span className="font-semibold text-text">{routeLabels[seg] ?? "Overview"}</span>
       </span>

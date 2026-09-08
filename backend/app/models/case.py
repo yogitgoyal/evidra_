@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, JSON, String, func
+from sqlalchemy import Date, DateTime, JSON, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -11,6 +11,14 @@ class Case(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    case_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    investigation_mode: Mapped[str] = mapped_column(String(16), default="entity", nullable=False)
+    seed_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    seed_value: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    evidence_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    incident_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    event_description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="active", nullable=False)
     priority: Mapped[str] = mapped_column(String(16), default="medium", nullable=False)
     lead: Mapped[str] = mapped_column(String(255), default="Unassigned", nullable=False)

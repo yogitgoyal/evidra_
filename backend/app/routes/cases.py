@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,6 +16,14 @@ router = APIRouter(tags=["cases"])
 class CaseCreate(BaseModel):
     name: str
     id: str | None = None
+    case_type: str | None = None
+    description: str | None = None
+    investigation_mode: str = "entity"
+    seed_type: str | None = None
+    seed_value: str | None = None
+    evidence_type: str | None = None
+    incident_date: date | None = None
+    event_description: str | None = None
     status: str = "active"
     priority: str = "medium"
     lead: str = "Unassigned"
@@ -35,8 +43,22 @@ class CaseRead(CaseCreate):
 
 @router.post("/cases", response_model=CaseRead, status_code=201)
 async def create_case(payload: CaseCreate, db: AsyncSession = Depends(get_db)) -> Case:
-    case = Case(id=payload.id or str(uuid4()), name=payload.name, status=payload.status,
-                priority=payload.priority, lead=payload.lead, tags=payload.tags)
+    case = Case(
+        id=payload.id or str(uuid4()),
+        name=payload.name,
+        case_type=payload.case_type,
+        description=payload.description,
+        investigation_mode=payload.investigation_mode,
+        seed_type=payload.seed_type,
+        seed_value=payload.seed_value,
+        evidence_type=payload.evidence_type,
+        incident_date=payload.incident_date,
+        event_description=payload.event_description,
+        status=payload.status,
+        priority=payload.priority,
+        lead=payload.lead,
+        tags=payload.tags,
+    )
     db.add(case)
     try:
         await db.commit()
@@ -74,6 +96,10 @@ async def _counts(db: AsyncSession, case_id: str) -> dict[str, int]:
 def _serialize(case: Case, counts: dict[str, int]) -> dict:
     return {
         "id": case.id, "name": case.name, "title": case.name, "created_at": case.created_at,
+        "case_type": case.case_type, "description": case.description,
+        "investigation_mode": case.investigation_mode, "seed_type": case.seed_type,
+        "seed_value": case.seed_value, "evidence_type": case.evidence_type,
+        "incident_date": case.incident_date, "event_description": case.event_description,
         "opened": case.created_at.date().isoformat(), "status": case.status, "priority": case.priority,
         "lead": case.lead, "tags": case.tags or [], "entities": counts.get("entities", 0),
         "alerts": counts.get("alerts", 0), "riskScore": min(100, counts.get("alerts", 0) * 20),

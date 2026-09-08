@@ -9,3 +9,7 @@ backend/venv/
 .env.test.local
 .env.production.local
 *.log
+
+backend/*.sqlite3
+backend/*.sqlite
+frontend/tsconfig.tsbuildinfo

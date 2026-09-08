@@ -62,6 +62,15 @@ export function clearAuthToken(): void {
 export interface CaseCreatePayload {
   name: string;
   id?: string;
+  case_type?: string;
+  description?: string;
+  investigation_mode?: "entity" | "evidence" | "event";
+  seed_type?: "phone" | "bank_account" | "social_handle";
+  seed_value?: string;
+  evidence_type?: "CDR" | "IPDR" | "Banking" | "Social" | "Identity";
+  incident_date?: string;
+  event_description?: string;
+  priority?: "critical" | "high" | "medium" | "low";
 }
 
 export interface CaseApiResponse {
@@ -77,6 +86,14 @@ export interface CaseApiResponse {
   alerts?: number;
   riskScore?: number;
   tags?: string[];
+  case_type?: string;
+  description?: string;
+  investigation_mode?: "entity" | "evidence" | "event";
+  seed_type?: string;
+  seed_value?: string;
+  evidence_type?: string;
+  incident_date?: string;
+  event_description?: string;
 }
 
 export async function createCase(payload: CaseCreatePayload): Promise<CaseApiResponse> {

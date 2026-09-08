@@ -1,0 +1,9 @@
+.env
+.env.txt
+venv/
+*.log
+__pycache__/
+.pytest_cache/
+reports/*.pdf
+test_issue*.py
+check_neon.py

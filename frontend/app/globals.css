@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+:root {
+  /* Page canvas vs. raised surfaces */
+  --evidra-bg: #f6f7f9;
+  --evidra-bg-raised: #ffffff;
+  --evidra-surface: #ffffff;
+  --evidra-surface-2: #f4f5f7;
+  --evidra-border: #e6e8ec;
+  --evidra-border-soft: #edeef1;
+
+  /* Type */
+  --evidra-text: #14161a;
+  --evidra-text-dim: #5b616e;
+  --evidra-text-faint: #94989f;
+
+  /* Brand + semantic accents */
+  --evidra-cyan: #2f5fe0;       /* primary action blue — token name kept as "cyan" so components don't need renaming */
+  --evidra-cyan-dim: #e8edfc;
+  --evidra-amber: #d97a06;
+  --evidra-amber-bg: #fdf1dd;
+  --evidra-red: #dc3d43;
+  --evidra-red-bg: #fce8e8;
+  --evidra-green: #16874f;
+  --evidra-green-bg: #e4f6ec;
+  --evidra-violet: #7c53e0;
+  --evidra-violet-bg: #efe9fc;
+}
+
+@theme inline {
+  --color-bg: var(--evidra-bg);
+  --color-bg-raised: var(--evidra-bg-raised);
+  --color-surface: var(--evidra-surface);
+  --color-surface-2: var(--evidra-surface-2);
+  --color-border: var(--evidra-border);
+  --color-border-soft: var(--evidra-border-soft);
+  --color-text: var(--evidra-text);
+  --color-text-dim: var(--evidra-text-dim);
+  --color-text-faint: var(--evidra-text-faint);
+  --color-cyan: var(--evidra-cyan);
+  --color-cyan-dim: var(--evidra-cyan-dim);
+  --color-amber: var(--evidra-amber);
+  --color-amber-bg: var(--evidra-amber-bg);
+  --color-red: var(--evidra-red);
+  --color-red-bg: var(--evidra-red-bg);
+  --color-green: var(--evidra-green);
+  --color-green-bg: var(--evidra-green-bg);
+  --color-violet: var(--evidra-violet);
+  --color-violet-bg: var(--evidra-violet-bg);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+* { border-color: var(--evidra-border); }
+html { color-scheme: light; }
+body {
+  background: var(--evidra-bg);
+  color: var(--evidra-text);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: rgba(47, 95, 224, 0.16); color: var(--evidra-text); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d7dade; border-radius: 999px; border: 2px solid var(--evidra-bg); }
+::-webkit-scrollbar-thumb:hover { background: #b9bec5; }
+
+/* Background texture: faint schematic grid + soft blue radial, used on command surfaces */
+.bg-command {
+  background-color: var(--evidra-bg);
+  background-image:
+    radial-gradient(ellipse 80% 60% at 50% -10%, rgba(47, 95, 224, 0.06), transparent 60%),
+    linear-gradient(rgba(20, 22, 26, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20, 22, 26, 0.035) 1px, transparent 1px);
+  background-size: auto, 44px 44px, 44px 44px;
+  background-position: center, center, center;
+}
+
+.bg-noise::before {
+  content: "";
+  position: fixed; inset: 0; pointer-events: none; opacity: 0.015; z-index: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.font-mono-tab { font-variant-numeric: tabular-nums; }
+
+/* Signature: evidence trace — animated dashed connector used when a citation chip is active */
+@keyframes trace-dash { to { stroke-dashoffset: -40; } }
+.evidence-trace {
+  stroke-dasharray: 4 5;
+  animation: trace-dash 1.1s linear infinite;
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.9); opacity: 0.6; }
+  70% { transform: scale(1.6); opacity: 0; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+.pulse-ring::before {
+  content: ""; position: absolute; inset: 0; border-radius: 999px;
+  border: 1.5px solid currentColor; animation: pulse-ring 2.2s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+}
+
+@keyframes scan-sweep { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+.scan-sweep { position: relative; overflow: hidden; }
+.scan-sweep::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(47, 95, 224, 0.05), transparent);
+  animation: scan-sweep 3.2s ease-in-out infinite;
+}
+
+@keyframes blink-caret { 0%, 45% { opacity: 1; } 50%, 100% { opacity: 0; } }
+.caret-blink { animation: blink-caret 1s steps(1) infinite; }
+
+@keyframes rise-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.rise-in { animation: rise-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* Flat white grain card — no gradient in light mode */
+.grain-card { background: var(--evidra-surface); }
+
+/* Glow is banned in light mode */
+.text-glow-cyan { text-shadow: none; }
+
+.mask-fade-b { mask-image: linear-gradient(to bottom, black 70%, transparent 100%); }
+
+/* Premium soft elevation — used on all card surfaces */
+.card-shadow {
+  box-shadow: 0 1px 2px rgba(20, 22, 26, 0.04), 0 1px 1px rgba(20, 22, 26, 0.03);
+}

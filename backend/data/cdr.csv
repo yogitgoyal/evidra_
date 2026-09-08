@@ -1,0 +1,2 @@
+id,case_id,timestamp,caller,callee,duration_seconds
+cdr_0001,2047,2026-08-20T13:41:03Z,+911111111111,+912222222222,252

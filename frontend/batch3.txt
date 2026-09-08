@@ -1,0 +1,404 @@
+﻿=== app/dashboard/CommandCenter.tsx (ya .js) ===
+
+"use client";
+
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { getCase, deleteCase, CaseApiResponse } from "@/lib/api";
+import Link from "next/link";
+import { motion } from "framer-motion";
+import { cases, entities, edges, evidence, storyClaims, timeline } from "@/lib/data";
+import { CaseHeader } from "@/components/case/CaseHeader";
+import { StoryMode } from "@/components/case/StoryMode";
+import { RiskRadarChart } from "@/components/case/RiskRadarChart";
+import { EntityIcon, entityTypeLabel } from "@/components/case/EntityIcon";
+import { Card, SectionLabel } from "@/components/ui/primitives";
+import { confidenceLabel, riskColor } from "@/lib/utils";
+import {
+  GitFork,
+  History,
+  Landmark,
+  MapPinned,
+  BotMessageSquare,
+  FileSearch,
+  FileOutput,
+  ArrowUpRight,
+} from "lucide-react";
+
+const getQuickLinks = () => [
+  { href: "graph", icon: GitFork, label: "Investigation Graph", desc: `${entities.length} entities Â· ${edges.length} relationships` },
+  { href: "timeline", icon: History, label: "Digital Timeline", desc: `${timeline.length} reconstructed events` },
+  { href: "financial", icon: Landmark, label: "Financial Flow", desc: "Fan-in / fan-out pattern" },
+  { href: "map", icon: MapPinned, label: "Geospatial View", desc: "2 towers, 5 co-occurrences" },
+  { href: "copilot", icon: BotMessageSquare, label: "AI Copilot", desc: "Grounded natural-language queries" },
+  { href: "evidence", icon: FileSearch, label: "Evidence Viewer", desc: `${evidence.length} source records` },
+  { href: "report", icon: FileOutput, label: "Report Generator", desc: "Export court-ready PDF" },
+];
+
+export default function CaseOverviewPage() {
+  const params = useParams();
+  const router = useRouter();
+  const caseId = params?.id as string;
+  const [realCase, setRealCase] = useState<CaseApiResponse | null>(null);
+
+  useEffect(() => {
+    if (!caseId) return;
+    getCase(caseId)
+      .then(setRealCase)
+      .catch(() => setRealCase(null));
+  }, [caseId]);
+
+  const mockFallback = cases.find((x) => x.id === caseId) ?? cases[0];
+  const c = realCase
+    ? { ...mockFallback, id: realCase.id, title: realCase.name, opened: realCase.created_at.split("T")[0] }
+    : mockFallback;
+
+  async function handleDelete() {
+    const confirmed = window.confirm(
+      `Delete "${c.title}"? This cannot be undone.`
+    );
+    if (!confirmed) return;
+    try {
+      await deleteCase(caseId);
+      router.push("/dashboard");
+    } catch (err) {
+      alert("Failed to delete case. Please try again.");
+    }
+  }
+
+  const topEntities = [...entities].sort((a, b) => b.risk - a.risk).slice(0, 6);
+  const recentEvents = timeline.slice(0, 4);
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-6 px-6 py-8 lg:px-8">
+      {/* Case Header */}
+      <CaseHeader c={c} />
+
+      <div className="flex justify-end">
+        <button
+          onClick={handleDelete}
+          className="rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-100"
+        >
+          Delete Case
+        </button>
+      </div>
+
+      {/* Task 3: Risk Factor Radar Chart */}
+      <RiskRadarChart riskScore={c.riskScore} />
+
+      {/* Quick Navigation Cards */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {getQuickLinks().map((q, i) => (
+          <motion.div
+            key={q.href}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 * i, duration: 0.4 }}
+          >
+            <Link
+              href={`/case/${caseId}/${q.href}`}
+              className="group flex items-start gap-3 rounded-xl border border-border-soft bg-surface p-4 transition-all hover:border-cyan/40 hover:bg-surface-2"
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-dim text-cyan">
+                <q.icon size={16} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1 text-[13px] font-medium text-text">
+                  {q.label}
+                  <ArrowUpRight size={12} className="text-text-faint opacity-0 transition-opacity group-hover:opacity-100" />
+                </div>
+                <div className="mt-0.5 text-[11px] text-text-faint">{q.desc}</div>
+              </div>
+            </Link>
+          </motion.div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <StoryMode claims={storyClaims} />
+        </div>
+
+        <div className="space-y-6">
+          <Card initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.1 }} className="p-6">
+            <SectionLabel className="mb-4">Highest-risk entities</SectionLabel>
+            <div className="space-y-1">
+              {topEntities.map((e, i) => (
+                <motion.div
+                  key={e.id}
+                  initial={{ opacity: 0, x: 8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.15 + i * 0.05 }}
+                  className="flex items-center gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-surface-2"
+                >
+                  <EntityIcon type={e.type} size={14} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[12.5px] text-text">{e.label}</div>
+                    <div className="truncate text-[10.5px] text-text-faint">{entityTypeLabel[e.type]} Â· {confidenceLabel(e.confidence)}</div>
+                  </div>
+                  <span className="font-mono text-xs font-semibold" style={{ color: riskColor(e.risk) }}>
+                    {e.risk}
+                  </span>
+                </motion.div>
+              ))}
+            </div>
+          </Card>
+
+          <Card initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.15 }} className="p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <SectionLabel>Recent timeline</SectionLabel>
+              <Link href={`/case/${caseId}/timeline`} className="text-[11px] text-cyan hover:underline">
+                View all
+              </Link>
+            </div>
+            <div className="space-y-4">
+              {recentEvents.map((ev) => (
+                <div key={ev.id} className="relative border-l border-border-soft pl-4">
+                  <span
+                    className="absolute -left-[3.5px] top-1 h-[7px] w-[7px] rounded-full"
+                    style={{ backgroundColor: ev.severity === "high" ? "var(--evidra-red)" : ev.severity === "watch" ? "var(--evidra-amber)" : "var(--evidra-cyan)" }}
+                  />
+                  <div className="font-mono text-[10px] text-text-faint">{ev.timestamp}</div>
+                  <div className="mt-0.5 text-[12.5px] font-medium text-text">{ev.title}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+"use client";
+
+import { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { AnimatePresence, motion } from "framer-motion";
+import { entities, edges } from "@/lib/data";
+import { Entity, EntityType } from "@/lib/types";
+import { Badge } from "@/components/ui/primitives";
+import { Cite } from "@/components/evidence/Cite";
+import { EntityIcon, entityTypeLabel } from "@/components/case/EntityIcon";
+import { entityColorMap2D } from "@/components/graph/InvestigationGraph";
+import { cn, confidenceLabel, riskColor, riskLabel } from "@/lib/utils";
+import { X, Waypoints, Info } from "lucide-react";
+
+const InvestigationGraph = dynamic(
+  () => import("@/components/graph/InvestigationGraph").then((m) => m.InvestigationGraph),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full w-full items-center justify-center text-xs font-mono uppercase text-text-dim">
+        Initializing 2D Force Engineâ€¦
+      </div>
+    ),
+  }
+);
+
+const allTypes = Array.from(new Set(entities.map((e) => e.type))) as EntityType[];
+
+export default function GraphPage() {
+  const [selected, setSelected] = useState<Entity | null>(null);
+  const [activeTypes, setActiveTypes] = useState<Set<EntityType>>(new Set(allTypes));
+
+  const relatedEdges = useMemo(
+    () => (selected ? edges.filter((e) => e.source === selected.id || e.target === selected.id) : []),
+    [selected]
+  );
+
+  function toggleType(t: EntityType) {
+    setActiveTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(t)) {
+        if (next.size > 1) next.delete(t);
+      } else {
+        next.add(t);
+      }
+      return next;
+    });
+  }
+
+  return (
+    <div className="flex h-[calc(100vh-4rem)] w-full min-w-0 flex-col overflow-hidden bg-[#f8fafc]">
+      {/* Top Filter Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-soft bg-surface/90 px-6 py-3 backdrop-blur-md shrink-0">
+        <div className="flex items-center gap-2.5">
+          <Waypoints size={16} className="text-cyan" />
+          <h1 className="text-sm font-bold text-text">Investigation Graph</h1>
+          <span className="font-mono text-[11px] text-text-faint">
+            {entities.length} entities Â· {edges.length} relationships
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {allTypes.map((t) => (
+            <button
+              key={t}
+              onClick={() => toggleType(t)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10.5px] font-medium transition-all select-none",
+                activeTypes.has(t)
+                  ? "border-border-soft bg-surface-2 text-text shadow-2xs"
+                  : "border-transparent bg-transparent text-text-faint opacity-40 hover:opacity-70"
+              )}
+            >
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: entityColorMap2D[t]?.base ?? "#64748b" }}
+              />
+              {entityTypeLabel[t]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Main Graph Viewport Container */}
+      <div className="relative flex flex-1 w-full min-w-0 overflow-hidden">
+        <div className="relative flex-1 w-full h-full min-w-0 overflow-hidden">
+          <InvestigationGraph onSelect={setSelected} filterTypes={activeTypes} />
+        </div>
+
+        {/* Bottom-left Legend Glass Pill */}
+        <div className="pointer-events-none absolute bottom-4 left-4 z-10 flex flex-wrap items-center gap-4 rounded-xl border border-border-soft bg-surface/90 px-3.5 py-2.5 text-[11px] text-text-dim backdrop-blur-md shadow-md">
+          <span className="flex items-center gap-2">
+            <svg width="22" height="2">
+              <line x1="0" y1="1" x2="22" y2="1" stroke="#475569" strokeWidth="2" />
+            </svg>
+            Observed Link
+          </span>
+          <span className="flex items-center gap-2">
+            <svg width="22" height="2">
+              <line x1="0" y1="1" x2="22" y2="1" stroke="#cbd5e1" strokeWidth="2" strokeDasharray="3,3" />
+            </svg>
+            Derived Link
+          </span>
+          <span className="flex items-center gap-1.5 text-text-faint">
+            <span className="h-2 w-2 rounded-full bg-red-500" /> Outgoing (Upstream)
+          </span>
+          <span className="flex items-center gap-1.5 text-text-faint">
+            <span className="h-2 w-2 rounded-full bg-green-500" /> Incoming (Downstream)
+          </span>
+          <span className="flex items-center gap-2 text-text-faint">
+            <Info size={12} className="text-cyan" /> Sphere size = Risk Score
+          </span>
+        </div>
+
+        {/* Right Info Drawer */}
+        <AnimatePresence>
+          {selected && (
+            <motion.aside
+              initial={{ x: 380, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 380, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 320, damping: 34 }}
+              className="absolute right-0 top-0 bottom-0 z-20 h-full w-full max-w-[360px] shrink-0 overflow-y-auto border-l border-border-soft bg-surface/95 text-text backdrop-blur-md shadow-2xl"
+            >
+              <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-soft bg-surface/95 px-5 py-4 backdrop-blur-md">
+                <div className="flex items-center gap-2">
+                  <EntityIcon type={selected.type} size={16} />
+                  <span className="text-sm font-bold text-text">Entity Detail</span>
+                </div>
+                <button
+                  onClick={() => setSelected(null)}
+                  className="rounded-lg p-1.5 text-text-dim transition-colors hover:bg-surface-2 hover:text-text"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-5 p-5">
+                <div>
+                  <div className="mb-1 font-mono text-[10.5px] uppercase tracking-wider text-text-faint">
+                    {entityTypeLabel[selected.type]}
+                  </div>
+                  <div className="text-base font-bold text-text">{selected.label}</div>
+                  {selected.sublabel && (
+                    <div className="mt-0.5 text-xs text-text-dim">{selected.sublabel}</div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-border-soft bg-surface-2 p-3">
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-text-faint">
+                      Risk score
+                    </div>
+                    <div
+                      className="mt-1 font-mono text-xl font-bold"
+                      style={{ color: riskColor(selected.risk) }}
+                    >
+                      {selected.risk}
+                    </div>
+                    <div className="text-[10.5px] text-text-dim">{riskLabel(selected.risk)}</div>
+                  </div>
+                  <div className="rounded-xl border border-border-soft bg-surface-2 p-3">
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-text-faint">
+                      Match confidence
+                    </div>
+                    <div className="mt-1.5">
+                      <Badge
+                        tone={
+                          selected.confidence === "high"
+                            ? "green"
+                            : selected.confidence === "ambiguous"
+                            ? "amber"
+                            : "neutral"
+                        }
+                      >
+                        {confidenceLabel(selected.confidence)}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+
+                {selected.tags && selected.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {selected.tags.map((t) => (
+                      <Badge key={t} tone="violet" className="font-mono">
+                        {t}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+
+                <div>
+                  <div className="mb-2 font-mono text-[10.5px] uppercase tracking-wider text-text-faint">
+                    Direct relationships ({relatedEdges.length})
+                  </div>
+                  <div className="space-y-2">
+                    {relatedEdges.map((e) => {
+                      const otherId = e.source === selected.id ? e.target : e.source;
+                      const other = entities.find((en) => en.id === otherId);
+                      const direction = e.source === selected.id ? "â†’" : "â†";
+                      const isOutgoing = e.source === selected.id;
+                      return (
+                        <div
+                          key={e.id}
+                          className="rounded-xl border border-border-soft bg-surface-2 px-3 py-2.5"
+                        >
+                          <div className="flex items-center gap-1.5 text-xs text-text">
+                            <span className="font-mono text-[10.5px] font-semibold" style={{ color: isOutgoing ? "#ef4444" : "#22c55e" }}>
+                              {e.kind}
+                            </span>
+                            <span className="text-text-faint">{direction}</span>
+                            {other && <EntityIcon type={other.type} size={13} />}
+                            <span className="truncate font-medium">{other?.label ?? otherId}</span>
+                          </div>
+                          <div className="mt-1.5 flex items-center justify-between">
+                            <span className="text-[10.5px] text-text-faint">
+                              {e.confidence === "high" ? "Observed link" : "Derived link"}
+                            </span>
+                            <Cite ids={e.evidenceIds} chipKey={e.id} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </motion.aside>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+

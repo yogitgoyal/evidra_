@@ -56,6 +56,17 @@ class IdentityRecord(CaseLinkedRecord):
     case = relationship("Case", back_populates="identity_records")
 
 
+class ReportRecord(CaseLinkedRecord):
+    __tablename__ = "report_records"
+
+    raw_text: Mapped[str] = mapped_column(String(100000), nullable=False)
+    submitted_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    extracted_entities: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+
+    case = relationship("Case", back_populates="report_records")
+
+
 class EvidenceRecordRow(Base):
     __tablename__ = "evidence_records"
 

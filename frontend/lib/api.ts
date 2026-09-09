@@ -247,6 +247,34 @@ export function uploadSocialBulk(caseId: string, file: File): Promise<BulkUpload
   return uploadBulk(`/cases/${caseId}/social/bulk`, file);
 }
 
+export interface ReportEntity {
+  type: string;
+  value: string;
+  confidence: "high" | "ambiguous";
+  offset: number;
+}
+
+export interface ReportRecord {
+  id: string;
+  case_id: string;
+  raw_text: string;
+  submitted_by: string;
+  submitted_at: string;
+  extracted_entities: ReportEntity[];
+}
+
+export function createReport(caseId: string, rawText: string): Promise<ReportRecord> {
+  return request(`/cases/${caseId}/reports`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ raw_text: rawText }),
+  });
+}
+
+export function listReports(caseId: string): Promise<ReportRecord[]> {
+  return request(`/cases/${caseId}/reports`);
+}
+
 export interface GraphApiResponse {
   entities: Entity[];
   edges: GraphEdge[];

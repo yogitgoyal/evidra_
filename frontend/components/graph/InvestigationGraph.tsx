@@ -81,6 +81,12 @@ export const entityColorMap2D: Record<
     dark: "#7f1d1d",
     label: "Social Profile",
   },
+  vehicle: {
+    base: "#0f766e",
+    highlight: "#ccfbf1",
+    dark: "#134e4a",
+    label: "Vehicle",
+  },
 };
 
 export function InvestigationGraph({

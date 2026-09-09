@@ -2,10 +2,10 @@ from typing import Optional, Union, Literal
 from pydantic import BaseModel
 
 # ---------- Shared enums ----------
-EntityType = Literal["person","phone","sim","device","ip","account","upi","tower","location","social"]
+EntityType = Literal["person","phone","sim","device","ip","account","upi","tower","location","social","vehicle"]
 MatchConfidence = Literal["high","ambiguous","none"]
 EdgeKind = Literal["CALLED","MESSAGED","TRANSFERRED_TO","OWNS","USES","LOCATED_AT","MENTIONED","CO_OCCURRED","SHARED_DEVICE","SHARED_LOCATION"]
-EvidenceSource = Literal["CDR","IPDR","Banking","Social","Identity"]
+EvidenceSource = Literal["CDR","IPDR","Banking","Social","Identity","Report"]
 TimelineType = Literal["banking","telecom","social","location"]
 TimelineSeverity = Literal["critical","high","watch","info","medium","low"]
 CaseStatus = Literal["active","review","closed"]

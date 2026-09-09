@@ -31,5 +31,6 @@ class Case(Base):
     banking_records = relationship("BankingRecord", back_populates="case")
     social_records = relationship("SocialRecord", back_populates="case")
     identity_records = relationship("IdentityRecord", back_populates="case")
+    report_records = relationship("ReportRecord", back_populates="case")
     evidence_records = relationship("EvidenceRecordRow", back_populates="case")
     audit_logs = relationship("AuditLogEntry", back_populates="case")

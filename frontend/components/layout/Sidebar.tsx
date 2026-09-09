@@ -19,6 +19,7 @@ import {
   FileOutput,
   Wallet,
   Users2,
+  FileText,
   ChevronLeft,
   FolderOpen,
   LogOut,
@@ -38,6 +39,7 @@ const caseTabs = [
   { href: "/social", label: "Social Records", icon: Users2 },
   { href: "/ipdr", label: "IPDR Records", icon: FileSearch },
   { href: "/identity", label: "Identity Records", icon: FileSearch },
+  { href: "/reports", label: "FIR Reports", icon: FileText },
 ];
 
 export function Sidebar() {

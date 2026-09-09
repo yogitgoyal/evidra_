@@ -8,7 +8,8 @@ export type EntityType =
   | "upi"
   | "tower"
   | "location"
-  | "social";
+  | "social"
+  | "vehicle";
 
 export type MatchConfidence = "high" | "ambiguous" | "none";
 
@@ -46,7 +47,7 @@ export interface GraphEdge {
 
 export interface EvidenceRecord {
   id: string;
-  source: "CDR" | "IPDR" | "Banking" | "Social" | "Identity";
+  source: "CDR" | "IPDR" | "Banking" | "Social" | "Identity" | "Report";
   summary: string;
   timestamp: string;
   hash: string;

@@ -22,6 +22,7 @@ from app.routes.cases import router as cases_router
 from app.routes.cdr import router as cdr_router
 from app.routes.identity import router as identity_router
 from app.routes.ipdr import router as ipdr_router
+from app.routes.reports import router as reports_router
 from app.routes.social import router as social_router
 from app.store import store
 
@@ -36,6 +37,7 @@ app.include_router(banking_router, dependencies=[Depends(require_officer)])
 app.include_router(social_router, dependencies=[Depends(require_officer)])
 app.include_router(ipdr_router, dependencies=[Depends(require_officer)])
 app.include_router(identity_router, dependencies=[Depends(require_officer)])
+app.include_router(reports_router, dependencies=[Depends(require_officer)])
 
 class CopilotQuery(BaseModel):
     case_id: str

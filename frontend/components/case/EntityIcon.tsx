@@ -9,6 +9,7 @@ import {
   RadioTower,
   MapPin,
   AtSign,
+  Car,
   type LucideIcon,
 } from "lucide-react";
 import { EntityType } from "@/lib/types";
@@ -24,6 +25,7 @@ export const entityIconMap: Record<EntityType, LucideIcon> = {
   tower: RadioTower,
   location: MapPin,
   social: AtSign,
+  vehicle: Car,
 };
 
 export const entityColorMap: Record<EntityType, string> = {
@@ -37,6 +39,7 @@ export const entityColorMap: Record<EntityType, string> = {
   tower: "#5b616e",
   location: "#5b616e",
   social: "#dc3d43",
+  vehicle: "#0f766e",
 };
 
 export const entityTypeLabel: Record<EntityType, string> = {
@@ -50,6 +53,7 @@ export const entityTypeLabel: Record<EntityType, string> = {
   tower: "Tower",
   location: "Location",
   social: "Social",
+  vehicle: "Vehicle",
 };
 
 export function EntityIcon({ type, size = 14, className }: { type: EntityType; size?: number; className?: string }) {

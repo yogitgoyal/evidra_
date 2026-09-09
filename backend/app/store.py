@@ -11,7 +11,7 @@ import urllib.request
 from fastapi import HTTPException
 from app.models import GraphResponse, TimelineEvent, EvidenceRecord, Entity, GraphEdge
 from app.models.case import Case
-from app.models.datasets import BankingRecord, CdrRecord, EvidenceRecordRow, IpdrRecord, SocialRecord
+from app.models.datasets import BankingRecord, CdrRecord, EvidenceRecordRow, IpdrRecord, ReportRecord, SocialRecord
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import FinancialFlowResponse, FinancialFlowNode, FinancialFlowLink
@@ -344,7 +344,8 @@ class DataStore:
             ipdr = list(await db.scalars(select(IpdrRecord).where(IpdrRecord.case_id == case_id)))
             banking = list(await db.scalars(select(BankingRecord).where(BankingRecord.case_id == case_id)))
             social = list(await db.scalars(select(SocialRecord).where(SocialRecord.case_id == case_id)))
-            if cdr or ipdr or social or banking:
+            reports = list(await db.scalars(select(ReportRecord).where(ReportRecord.case_id == case_id)))
+            if cdr or ipdr or social or banking or reports:
                 evidence_ids = await self._ensure_provenance(db, case_id, cdr + ipdr + banking + social, "graph_edge")
                 entities = {}
                 edges = []
@@ -377,6 +378,14 @@ class DataStore:
                 for row in social:
                     add_entity(row.actor, "social", row.actor); add_entity(row.target, "social", row.target)
                     edges.append(GraphEdge(id=row.id, source=row.actor, target=row.target, kind="MENTIONED", confidence="high", weight=3 if (row.target, row.actor) in social_links else 1, evidenceId=evidence_ids[row.id], evidenceIds=[evidence_ids[row.id]]))
+                for report in reports:
+                    for extracted in report.extracted_entities:
+                        entity_type = extracted.get("type")
+                        value = extracted.get("value")
+                        if entity_type not in {"person", "phone", "ip", "location", "vehicle"} or not value:
+                            continue
+                        entity_id = value if entity_type in {"phone", "ip"} else f"{entity_type}:{value}"
+                        add_entity(entity_id, entity_type, value)
                 return GraphResponse(entities=list(entities.values()), edges=edges, fraudMetrics=await self.fraud_analysis(case_id, db))
         case_ids = {case.id for case in self.cases}
         ents = list(self.entities) if case_id in case_ids else []

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, Numeric, String
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, LargeBinary, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -63,6 +63,9 @@ class ReportRecord(CaseLinkedRecord):
     submitted_by: Mapped[str] = mapped_column(String(128), nullable=False)
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     extracted_entities: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    original_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    original_content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    original_file: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
 
     case = relationship("Case", back_populates="report_records")
 

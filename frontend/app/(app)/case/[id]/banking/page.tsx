@@ -3,7 +3,14 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { createBanking, listBanking, BankingRecord, uploadBankingBulk, BulkUploadResponse } from "@/lib/api";
+import {
+  createBanking,
+  downloadBankingBulkUploadFile,
+  listBanking,
+  BankingRecord,
+  uploadBankingBulk,
+  BulkUploadResponse,
+} from "@/lib/api";
 
 export default function CaseBankingPage() {
   const params = useParams();
@@ -20,6 +27,7 @@ export default function CaseBankingPage() {
   const [bulkText, setBulkText] = useState("");
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkResult, setBulkResult] = useState<BulkUploadResponse | null>(null);
+  const [sourceFileUrl, setSourceFileUrl] = useState<string | null>(null);
 
   async function loadRecords() {
     try {
@@ -33,6 +41,24 @@ export default function CaseBankingPage() {
   useEffect(() => {
     if (caseId) loadRecords();
   }, [caseId]);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    const batchId = bulkResult?.has_source_file ? bulkResult.batch_id : undefined;
+    if (!batchId) {
+      setSourceFileUrl(null);
+      return;
+    }
+    downloadBankingBulkUploadFile(caseId, batchId)
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        setSourceFileUrl(objectUrl);
+      })
+      .catch(() => setSourceFileUrl(null));
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [caseId, bulkResult]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -79,7 +105,7 @@ export default function CaseBankingPage() {
         setError("Choose a CSV file or paste CSV content first.");
         return;
       }
-      setBulkResult(await uploadBankingBulk(caseId, uploadFile));
+      setBulkResult(await uploadBankingBulk(caseId, uploadFile, bulkText.trim() ? "paste" : "file"));
       setBulkFile(null);
       setBulkText("");
       await loadRecords();
@@ -173,6 +199,16 @@ export default function CaseBankingPage() {
         {bulkResult && (
           <div className="space-y-2 text-sm text-text">
             <p>{bulkResult.created} records added, {bulkResult.rejected.length} rejected.</p>
+            {bulkResult.has_source_file && bulkResult.batch_id && sourceFileUrl && (
+              <a
+                href={sourceFileUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-cyan underline"
+              >
+                View original CSV
+              </a>
+            )}
             {bulkResult.rejected.length > 0 && (
               <details>
                 <summary className="cursor-pointer text-text-faint">Rejected rows</summary>

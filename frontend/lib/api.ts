@@ -147,11 +147,14 @@ export interface BulkUploadResponse {
   created: number;
   rejected: Array<{ row: number; reason: string }>;
   sample_ids: string[];
+  has_source_file?: boolean;
+  batch_id?: string;
 }
 
-async function uploadBulk(path: string, file: File): Promise<BulkUploadResponse> {
+async function uploadBulk(path: string, file: File, sourceType?: "file" | "paste"): Promise<BulkUploadResponse> {
   const form = new FormData();
   form.append("file", file);
+  if (sourceType) form.append("source_type", sourceType);
   return request(path, { method: "POST", body: form });
 }
 
@@ -218,8 +221,24 @@ export function listBanking(caseId: string): Promise<BankingRecord[]> {
   return request(`/cases/${caseId}/banking`);
 }
 
-export function uploadBankingBulk(caseId: string, file: File): Promise<BulkUploadResponse> {
-  return uploadBulk(`/cases/${caseId}/banking/bulk`, file);
+export function uploadBankingBulk(
+  caseId: string,
+  file: File,
+  sourceType: "file" | "paste" = "file",
+): Promise<BulkUploadResponse> {
+  return uploadBulk(`/cases/${caseId}/banking/bulk`, file, sourceType);
+}
+
+export function bankingBulkUploadFileUrl(caseId: string, batchId: string): string {
+  return `${API_BASE}/cases/${caseId}/banking/bulk-uploads/${batchId}/file`;
+}
+
+export async function downloadBankingBulkUploadFile(caseId: string, batchId: string): Promise<Blob> {
+  const response = await fetch(bankingBulkUploadFileUrl(caseId, batchId), {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`Failed to download banking upload: ${response.status}`);
+  return response.blob();
 }
 
 export interface SocialCreatePayload {

@@ -22,10 +22,10 @@ DATE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 AMOUNT_PATTERN = re.compile(
-    r"(?<!\w)(?:₹|Rs\.?|INR)\s*[\d,]+(?:\.\d{1,2})?(?!\w)",
+    r"(?<!\w)(?:₹|Rs\.?|INR)\s*\d+(?:,\d+)*(?:\.\d{1,2})?(?!\w)",
     re.IGNORECASE,
 )
-PERSON_PATTERN = re.compile(r"\b[A-Z][a-z]{1,30}(?:\s+[A-Z][a-z]{1,30}){1,3}\b")
+PERSON_PATTERN = re.compile(r"\b[A-Z][a-z]{1,30}(?:(?:\s+|-)[A-Z][a-z]{1,30}){1,5}\b")
 
 LOCATION_NAMES = {
     "Amritsar", "Bengaluru", "Chandigarh", "Chennai", "Delhi", "Gurugram",
@@ -38,8 +38,20 @@ PERSON_STOPWORDS = {
 }
 INSTITUTIONAL_KEYWORDS = {
     "authority", "bank", "branch", "court", "department", "force",
-    "ministry", "office", "police", "station", "unit",
+    "cell", "lab", "laboratory", "ministry", "office", "police",
+    "station", "unit",
 }
+ROLE_PREFIXES = (
+    "Investigating Officer",
+    "Sub-Inspector",
+    "Sub Inspector",
+    "Witness",
+    "Complainant",
+    "Suspect",
+    "Officer",
+    "Victim",
+    "Accused",
+)
 
 
 def _matches(pattern: re.Pattern[str], text: str, entity_type: str) -> list[dict]:
@@ -72,11 +84,23 @@ def _heuristic_entities(text: str) -> list[dict]:
             continue
         if value in PERSON_STOPWORDS or value in LOCATION_NAMES or value in occupied:
             continue
+        role_prefix = next(
+            (prefix for prefix in ROLE_PREFIXES
+             if value.casefold().startswith(prefix.casefold() + " ")),
+            None,
+        )
+        if role_prefix:
+            value = value[len(role_prefix) + 1:]
+            offset = match.start() + len(role_prefix) + 1
+        else:
+            offset = match.start()
+        if not value:
+            continue
         entities.append({
             "type": "person",
             "value": value,
             "confidence": "ambiguous",
-            "offset": match.start(),
+            "offset": offset,
         })
     for location in sorted(LOCATION_NAMES, key=len, reverse=True):
         for match in re.finditer(rf"\b{re.escape(location)}\b", text, re.IGNORECASE):
@@ -105,6 +129,7 @@ def extract_entities(raw_text: str) -> list[dict]:
 
     unique = {}
     for entity in entities:
+        # Keep repeated mentions distinct for provenance; graph construction collapses node IDs.
         key = (entity["type"], entity["value"].casefold(), entity["offset"])
         unique[key] = entity
     return sorted(unique.values(), key=lambda entity: (entity["offset"], entity["type"]))

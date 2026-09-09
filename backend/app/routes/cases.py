@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db
@@ -73,7 +73,8 @@ async def create_case(payload: CaseCreate, db: AsyncSession = Depends(get_db)) -
 async def list_cases(db: AsyncSession = Depends(get_db)) -> list[dict]:
     result = await db.scalars(select(Case).order_by(Case.created_at.desc(), Case.id))
     cases = list(result)
-    return [_serialize(case, await _counts(db, case.id)) for case in cases]
+    counts = await _counts_for_cases(db, [case.id for case in cases])
+    return [_serialize(case, counts[case.id]) for case in cases]
 
 
 @router.get("/cases/{case_id}", response_model=CaseRead)
@@ -90,6 +91,48 @@ async def _counts(db: AsyncSession, case_id: str) -> dict[str, int]:
         counts[key] = int(await db.scalar(select(func.count()).select_from(model).where(model.case_id == case_id)) or 0)
     counts["entities"] = counts["cdr"] * 2 + counts["ipdr"] * 2 + counts["social"] * 2 + counts["banking"] * 2
     counts["alerts"] = int(counts["banking"] > 0) + int(counts["evidence"] > 0)
+    return counts
+
+
+async def _counts_for_cases(db: AsyncSession, case_ids: list[str]) -> dict[str, dict[str, int]]:
+    if not case_ids:
+        return {}
+
+    count_queries = [
+        select(
+            model.case_id.label("case_id"),
+            literal(key).label("kind"),
+            func.count().label("record_count"),
+        )
+        .where(model.case_id.in_(case_ids))
+        .group_by(model.case_id)
+        for key, model in (
+            ("cdr", CdrRecord),
+            ("ipdr", IpdrRecord),
+            ("banking", BankingRecord),
+            ("social", SocialRecord),
+            ("evidence", EvidenceRecordRow),
+        )
+    ]
+    combined = union_all(*count_queries).subquery()
+    counts = {
+        case_id: {"cdr": 0, "ipdr": 0, "banking": 0, "social": 0, "evidence": 0}
+        for case_id in case_ids
+    }
+    result = await db.execute(
+        select(combined.c.case_id, combined.c.kind, combined.c.record_count)
+    )
+    for case_id, kind, record_count in result:
+        counts[case_id][kind] = int(record_count)
+
+    for case_counts in counts.values():
+        case_counts["entities"] = (
+            case_counts["cdr"] * 2
+            + case_counts["ipdr"] * 2
+            + case_counts["social"] * 2
+            + case_counts["banking"] * 2
+        )
+        case_counts["alerts"] = int(case_counts["banking"] > 0) + int(case_counts["evidence"] > 0)
     return counts
 
 

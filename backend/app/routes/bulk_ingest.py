@@ -5,14 +5,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db
 from app.cdr_file_extractors import extract_cdr_rows
 from app.models.case import Case
 from app.models.audit import AuditLogEntry
-from app.models.datasets import BankingRecord, CdrRecord, EvidenceRecordRow, SocialRecord
+from app.models.datasets import BankingRecord, BankingUploadBatch, CdrRecord, EvidenceRecordRow, SocialRecord
 
 router = APIRouter(tags=["bulk-ingestion"])
 
@@ -142,8 +143,17 @@ async def upload_cdr_bulk(case_id: str, file: UploadFile = File(...), db: AsyncS
 
 
 @router.post("/cases/{case_id}/banking/bulk")
-async def upload_banking_bulk(case_id: str, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)) -> dict:
+async def upload_banking_bulk(
+    case_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    source_type: str | None = Form(None),
+) -> dict:
     await _case_or_404(case_id, db)
+    if source_type not in {None, "file", "paste"}:
+        raise HTTPException(status_code=400, detail="source_type must be file or paste.")
+    file_bytes = await file.read()
+    await file.seek(0)
     records = []
     rejected = []
     for line_number, row in await _rows(file):
@@ -155,6 +165,7 @@ async def upload_banking_bulk(case_id: str, file: UploadFile = File(...), db: As
             records.append(BankingRecord(
                 id=str(uuid4()),
                 case_id=case_id,
+                batch_id=None,
                 sender=row["sender"],
                 recipient=row["recipient"],
                 amount=amount,
@@ -164,7 +175,58 @@ async def upload_banking_bulk(case_id: str, file: UploadFile = File(...), db: As
             ))
         except (TypeError, ValueError, OverflowError) as error:
             rejected.append({"row": line_number, "reason": str(error)})
-    return await _commit(records, rejected, db)
+    if source_type == "paste":
+        result = await _commit(records, rejected, db)
+        result["has_source_file"] = False
+        return result
+
+    batch = BankingUploadBatch(
+        id=f"banking_upload_{uuid4()}",
+        case_id=case_id,
+        original_filename=file.filename or "banking.csv",
+        original_content_type=file.content_type,
+        original_file=file_bytes,
+    )
+    for record in records:
+        record.batch_id = batch.id
+    db.add(batch)
+    try:
+        await db.flush()
+        if records:
+            db.add_all(records)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return {
+        "created": len(records),
+        "rejected": rejected,
+        "sample_ids": [record.id for record in records[:5]],
+        "batch_id": batch.id,
+        "has_source_file": True,
+    }
+
+
+@router.get("/cases/{case_id}/banking/bulk-uploads/{batch_id}/file")
+async def get_banking_bulk_upload_file(
+    case_id: str,
+    batch_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    batch = await db.scalar(
+        select(BankingUploadBatch).where(
+            BankingUploadBatch.id == batch_id,
+            BankingUploadBatch.case_id == case_id,
+        )
+    )
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Banking upload batch not found.")
+    filename = batch.original_filename.replace('"', "")
+    return Response(
+        content=batch.original_file,
+        media_type=batch.original_content_type or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @router.post("/cases/{case_id}/social/bulk")

@@ -1,0 +1,13 @@
+FIR No. 245/2026 dated 03/09/2026, registered at Sector 34 Police Station, Chandigarh.
+
+Complainant Anita Devi Sharma, resident of Sector 40, Chandigarh, reported that on 28/08/2026 she received a call from mobile number 9876501234 claiming to be a representative of the State Bank customer service department. The caller, later identified as Rakesh Mehta, informed her that her account would be blocked unless she verified her details immediately. She was directed to share an OTP received on her registered number 9123045678.
+
+Following this, an unauthorized transaction of Rs. 3,45,000 was made from her account to an unknown beneficiary account. A second transaction of Rs. 89,500 was made twenty minutes later. Bank records show the transactions were initiated from IP address 103.211.45.67 and subsequently from 49.207.88.120, suggesting the use of multiple devices or a VPN.
+
+Investigation revealed that the accused, identified through subsequent surveillance as Rakesh Mehta and an associate named Suresh Kumar Yadav, operated from a rented premises in Sector 61, Mohali. A vehicle bearing registration number PB65AB4321 was seen parked outside the premises on multiple occasions between 25/08/2026 and 29/08/2026.
+
+Witness Ramanjeet Singh, a shopkeeper near the premises, stated that he had seen two men frequently visiting the location and had noted their vehicle. He also mentioned overhearing a phone conversation where the number 8765432190 was mentioned in connection with a "target list."
+
+The District Cyber Crime Cell was informed, and preliminary technical analysis by the Forensic Science Laboratory confirmed that the SIM card used for the initial call was registered under a fake identity document submitted at a local SIM retailer. The Reserve Bank of India guidelines on such fraud were cited by the investigating officer while preparing this report.
+
+A follow-up call was also received by the complainant's husband, Vikram Sharma, on his number 7788990011, using similar tactics but the call was disconnected before further damage occurred. The total loss reported in this FIR stands at Rs. 4,34,500.

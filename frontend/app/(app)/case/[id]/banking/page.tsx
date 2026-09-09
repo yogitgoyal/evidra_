@@ -91,7 +91,7 @@ export default function CaseBankingPage() {
   async function handleBulkSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!bulkFile && !bulkText.trim()) {
-      setError("Choose a CSV file or paste CSV content first.");
+      setError("Choose a CSV/XLSX file or paste CSV content first.");
       return;
     }
     setBulkLoading(true);
@@ -102,7 +102,7 @@ export default function CaseBankingPage() {
         ? new File([bulkText], "pasted.csv", { type: "text/csv" })
         : bulkFile;
       if (!uploadFile) {
-        setError("Choose a CSV file or paste CSV content first.");
+        setError("Choose a CSV/XLSX file or paste CSV content first.");
         return;
       }
       setBulkResult(await uploadBankingBulk(caseId, uploadFile, bulkText.trim() ? "paste" : "file"));
@@ -177,12 +177,12 @@ export default function CaseBankingPage() {
 
       <form onSubmit={handleBulkSubmit} className="space-y-4 rounded-xl border border-cyan/30 bg-surface p-6">
         <div>
-          <h2 className="text-sm font-semibold text-text">Bulk CSV upload</h2>
+          <h2 className="text-sm font-semibold text-text">Bulk CSV/XLSX upload</h2>
           <p className="mt-1 text-xs text-text-faint">Columns: sender, recipient, amount, channel, timestamp</p>
         </div>
         <input
           type="file"
-          accept=".csv,text/csv"
+          accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           onChange={(e) => setBulkFile(e.target.files?.[0] ?? null)}
           className="block w-full text-sm text-text-faint"
         />
@@ -194,7 +194,7 @@ export default function CaseBankingPage() {
            className="w-full rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text outline-none focus:border-cyan/50"
          />
          <button type="submit" disabled={bulkLoading} className="rounded-lg border border-cyan px-4 py-2 text-sm font-medium text-cyan disabled:opacity-50">
-          {bulkLoading ? "Uploading..." : "Upload CSV"}
+          {bulkLoading ? "Uploading..." : "Upload CSV/XLSX"}
         </button>
         {bulkResult && (
           <div className="space-y-2 text-sm text-text">

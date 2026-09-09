@@ -153,10 +153,14 @@ async def upload_banking_bulk(
     if source_type not in {None, "file", "paste"}:
         raise HTTPException(status_code=400, detail="source_type must be file or paste.")
     file_bytes = await file.read()
-    await file.seek(0)
+    try:
+        rows = extract_cdr_rows(file.filename or "", file.content_type, file_bytes)
+    except (ValueError, TypeError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
     records = []
     rejected = []
-    for line_number, row in await _rows(file):
+    for line_number, row in rows:
         try:
             _required(row, ("sender", "recipient", "amount"))
             amount = float(row["amount"])

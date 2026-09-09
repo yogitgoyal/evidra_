@@ -271,6 +271,20 @@ export function createReport(caseId: string, rawText: string): Promise<ReportRec
   });
 }
 
+export function uploadReport(
+  caseId: string,
+  file: File,
+  rawText?: string,
+): Promise<ReportRecord> {
+  const form = new FormData();
+  form.append("file", file);
+  if (rawText?.trim()) form.append("raw_text", rawText);
+  return request(`/cases/${caseId}/reports/file`, {
+    method: "POST",
+    body: form,
+  });
+}
+
 export function listReports(caseId: string): Promise<ReportRecord[]> {
   return request(`/cases/${caseId}/reports`);
 }

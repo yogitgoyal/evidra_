@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { createReport, listReports, ReportRecord } from "@/lib/api";
+import { createReport, listReports, ReportRecord, uploadReport } from "@/lib/api";
 
 export default function ReportsPage() {
   const caseId = useParams()?.id as string;
   const [rawText, setRawText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [reports, setReports] = useState<ReportRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -25,15 +26,20 @@ export default function ReportsPage() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!rawText.trim()) {
-      setError("Report text is required.");
+    if (!rawText.trim() && !file) {
+      setError("Paste report text or choose a PDF/DOCX file.");
       return;
     }
     setLoading(true);
     setError("");
     try {
-      await createReport(caseId, rawText);
+      if (file) {
+        await uploadReport(caseId, file, rawText);
+      } else {
+        await createReport(caseId, rawText);
+      }
       setRawText("");
+      setFile(null);
       await loadReports();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit report.");
@@ -53,13 +59,26 @@ export default function ReportsPage() {
 
       <form onSubmit={submit} className="space-y-4 rounded-xl border border-border-soft bg-surface p-6">
         <textarea
-          required
           value={rawText}
           onChange={(event) => setRawText(event.target.value)}
           placeholder="Paste FIR or surveillance report text here..."
           rows={12}
           className="w-full rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text outline-none focus:border-cyan/50"
         />
+        <label className="block text-sm text-text">
+          Or upload a PDF/DOCX file
+          <input
+            type="file"
+            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+            className="mt-2 block w-full text-sm"
+          />
+        </label>
+        {file && (
+          <p className="text-xs text-text-faint">
+            Selected: {file.name}
+          </p>
+        )}
         {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
         <button
           type="submit"

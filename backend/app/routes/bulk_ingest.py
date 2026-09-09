@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import io
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,8 +9,10 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db
+from app.cdr_file_extractors import extract_cdr_rows
 from app.models.case import Case
-from app.models.datasets import BankingRecord, CdrRecord, SocialRecord
+from app.models.audit import AuditLogEntry
+from app.models.datasets import BankingRecord, CdrRecord, EvidenceRecordRow, SocialRecord
 
 router = APIRouter(tags=["bulk-ingestion"])
 
@@ -58,9 +61,15 @@ async def _commit(records: list, rejected: list[dict[str, str]], db: AsyncSessio
 @router.post("/cases/{case_id}/cdr/bulk")
 async def upload_cdr_bulk(case_id: str, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)) -> dict:
     await _case_or_404(case_id, db)
+    file_bytes = await file.read()
+    try:
+        rows = extract_cdr_rows(file.filename or "", file.content_type, file_bytes)
+    except (ValueError, TypeError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
     records = []
     rejected = []
-    for line_number, row in await _rows(file):
+    for line_number, row in rows:
         try:
             _required(row, ("caller", "callee"))
             duration = int(row.get("duration_seconds") or 0)
@@ -74,10 +83,62 @@ async def upload_cdr_bulk(case_id: str, file: UploadFile = File(...), db: AsyncS
                 duration_seconds=duration,
                 timestamp=_timestamp(row.get("timestamp")),
                 attributes={},
+                original_filename=file.filename,
+                original_content_type=file.content_type,
+                original_file=file_bytes,
             ))
         except (TypeError, ValueError, OverflowError) as error:
             rejected.append({"row": line_number, "reason": str(error)})
-    return await _commit(records, rejected, db)
+
+    batch_id = f"cdr_upload_{uuid4()}"
+    content_hash = hashlib.sha256(file_bytes).hexdigest()
+    evidence = EvidenceRecordRow(
+        id=f"ev_{batch_id}",
+        case_id=case_id,
+        source="CDR",
+        source_record_id=batch_id,
+        rule="CDR_FILE_IMPORT",
+        transformation="cdr_tabular_file_import",
+        content_hash=content_hash,
+        fields={
+            "sourceType": "file",
+            "originalFilename": file.filename,
+            "originalContentType": file.content_type,
+            "created": len(records),
+            "rejected": len(rejected),
+        },
+        timestamp=datetime.now(timezone.utc),
+    )
+    audit = AuditLogEntry(
+        case_id=case_id,
+        user="system",
+        action="cdr_file_uploaded",
+        entity_type="cdr_upload",
+        entity_id=batch_id,
+        details={
+            "source_type": "file",
+            "original_filename": file.filename,
+            "original_content_type": file.content_type,
+            "content_hash": content_hash,
+            "created": len(records),
+            "rejected": len(rejected),
+        },
+    )
+    try:
+        if records:
+            db.add_all(records)
+        db.add_all([evidence, audit])
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return {
+        "created": len(records),
+        "rejected": rejected,
+        "sample_ids": [record.id for record in records[:5]],
+        "upload_id": batch_id,
+        "content_hash": content_hash,
+    }
 
 
 @router.post("/cases/{case_id}/banking/bulk")

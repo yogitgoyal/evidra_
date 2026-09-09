@@ -155,8 +155,12 @@ async function uploadBulk(path: string, file: File): Promise<BulkUploadResponse>
   return request(path, { method: "POST", body: form });
 }
 
-export function uploadCdrBulk(caseId: string, file: File): Promise<BulkUploadResponse> {
+export function uploadCdrFile(caseId: string, file: File): Promise<BulkUploadResponse> {
   return uploadBulk(`/cases/${caseId}/cdr/bulk`, file);
+}
+
+export function uploadCdrBulk(caseId: string, file: File): Promise<BulkUploadResponse> {
+  return uploadCdrFile(caseId, file);
 }
 
 export interface IpdrRecord {

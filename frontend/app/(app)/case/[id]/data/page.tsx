@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { createCdr, listCdr, CdrRecord, uploadCdrBulk, BulkUploadResponse } from "@/lib/api";
+import { createCdr, listCdr, CdrRecord, uploadCdrFile, BulkUploadResponse } from "@/lib/api";
 
 export default function CaseDataPage() {
   const params = useParams();
@@ -77,7 +77,7 @@ export default function CaseDataPage() {
         setError("Choose a CSV file or paste CSV content first.");
         return;
       }
-      setBulkResult(await uploadCdrBulk(caseId, uploadFile));
+      setBulkResult(await uploadCdrFile(caseId, uploadFile));
       setBulkFile(null);
       setBulkText("");
       await loadRecords();
@@ -138,12 +138,12 @@ export default function CaseDataPage() {
 
       <form onSubmit={handleBulkSubmit} className="space-y-4 rounded-xl border border-cyan/30 bg-surface p-6">
         <div>
-          <h2 className="text-sm font-semibold text-text">Bulk CSV upload</h2>
+          <h2 className="text-sm font-semibold text-text">Bulk CSV/XLSX upload</h2>
           <p className="mt-1 text-xs text-text-faint">Columns: caller, callee, duration_seconds, timestamp</p>
         </div>
         <input
           type="file"
-          accept=".csv,text/csv"
+          accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           onChange={(e) => setBulkFile(e.target.files?.[0] ?? null)}
           className="block w-full text-sm text-text-faint"
         />
@@ -155,7 +155,7 @@ export default function CaseDataPage() {
           className="w-full rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text outline-none focus:border-cyan/50"
         />
         <button type="submit" disabled={bulkLoading} className="rounded-lg border border-cyan px-4 py-2 text-sm font-medium text-cyan disabled:opacity-50">
-          {bulkLoading ? "Uploading..." : "Upload CSV"}
+          {bulkLoading ? "Uploading..." : "Upload CSV/XLSX"}
         </button>
         {bulkResult && (
           <div className="space-y-2 text-sm text-text">

@@ -19,6 +19,9 @@ class CdrRecord(CaseLinkedRecord):
     caller: Mapped[str] = mapped_column(String(128), nullable=False)
     callee: Mapped[str] = mapped_column(String(128), nullable=False)
     duration_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    original_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    original_content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    original_file: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     case = relationship("Case", back_populates="cdr_records")
 
 

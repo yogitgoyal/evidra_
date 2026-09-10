@@ -27,10 +27,26 @@ class CdrRecord(CaseLinkedRecord):
 
 class IpdrRecord(CaseLinkedRecord):
     __tablename__ = "ipdr_records"
+    batch_id: Mapped[str | None] = mapped_column(
+        ForeignKey("ipdr_upload_batches.id"), nullable=True
+    )
     source_ip: Mapped[str] = mapped_column(String(128), nullable=False)
     destination_ip: Mapped[str] = mapped_column(String(128), nullable=False)
     protocol: Mapped[str] = mapped_column(String(32), nullable=False)
     case = relationship("Case", back_populates="ipdr_records")
+
+
+class IpdrUploadBatch(Base):
+    __tablename__ = "ipdr_upload_batches"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    case_id: Mapped[str] = mapped_column(ForeignKey("cases.id"), nullable=False, index=True)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    original_content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    original_file: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class BankingUploadBatch(Base):

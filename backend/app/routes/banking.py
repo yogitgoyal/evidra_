@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.deps import get_db
 from app.models.case import Case
 from app.models.datasets import BankingRecord
+from app.store import store
 
 router = APIRouter(tags=["banking"])
 
@@ -51,6 +52,7 @@ async def create_banking(case_id: str, payload: BankingCreate, db: AsyncSession 
     )
     db.add(record)
     try:
+        await store._ensure_provenance(db, case_id, [record], "banking_manual_entry")
         await db.commit()
     except Exception:
         await db.rollback()

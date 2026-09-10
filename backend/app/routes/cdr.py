@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.deps import get_db
 from app.models.case import Case
 from app.models.datasets import CdrRecord
+from app.store import store
 
 router = APIRouter(tags=["cdr"])
 
@@ -48,6 +49,7 @@ async def create_cdr(case_id: str, payload: CdrCreate, db: AsyncSession = Depend
     )
     db.add(record)
     try:
+        await store._ensure_provenance(db, case_id, [record], "cdr_manual_entry")
         await db.commit()
     except Exception:
         await db.rollback()

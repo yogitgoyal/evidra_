@@ -2,9 +2,22 @@
 
 import { createContext, useCallback, useContext, useState, ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, FileCheck2, Clock, Hash, Database, ShieldCheck } from "lucide-react";
-import { getEvidenceRecord } from "@/lib/api";
+import { X, FileCheck2, Clock, Hash, Database, ShieldCheck, Download } from "lucide-react";
+import { downloadEvidenceFile, getCaseAudit, getEvidenceRecord, AuditEntry } from "@/lib/api";
 import { SourceTag } from "@/components/ui/primitives";
+
+function sourceRecordHref(caseId: string, source: string): string | null {
+  const paths: Record<string, string> = {
+    CDR: "data",
+    Banking: "banking",
+    Social: "social",
+    IPDR: "ipdr",
+    Identity: "identity",
+    Report: "reports",
+  };
+  const path = paths[source];
+  return path ? `/case/${caseId}/${path}` : null;
+}
 
 interface EvidenceCtx {
   openIds: string[] | null;
@@ -25,7 +38,23 @@ export function EvidenceProvider({ children, caseId }: { children: ReactNode; ca
   const [openIds, setOpenIds] = useState<string[] | null>(null);
   const [activeChip, setActiveChip] = useState<string | null>(null);
   const [records, setRecords] = useState<Record<string, Awaited<ReturnType<typeof getEvidenceRecord>>> | null>(null);
+  const [audits, setAudits] = useState<Record<string, AuditEntry[]>>({});
   const [error, setError] = useState("");
+
+  const downloadOriginal = useCallback(async (record: Awaited<ReturnType<typeof getEvidenceRecord>>) => {
+    if (!caseId || !record.hasOriginalFile) return;
+    try {
+      const blob = await downloadEvidenceFile(caseId, record.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = record.originalFilename || `${record.source.toLowerCase()}-${record.sourceRecordId || record.id}`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to download original file.");
+    }
+  }, [caseId]);
 
   const show = useCallback(async (ids: string[], chipKey?: string) => {
     if (!caseId) return;
@@ -33,8 +62,13 @@ export function EvidenceProvider({ children, caseId }: { children: ReactNode; ca
     setOpenIds(ids);
     setActiveChip(chipKey ?? null);
     try {
-      const entries = await Promise.all(ids.map(async (id) => [id, await getEvidenceRecord(caseId, id)] as const));
+      const entries = await Promise.all(ids.map(async (id) => {
+        const record = await getEvidenceRecord(caseId, id);
+        const auditEntries = await getCaseAudit(caseId, id);
+        return [id, record, auditEntries] as const;
+      }));
       setRecords(Object.fromEntries(entries));
+      setAudits(Object.fromEntries(entries.map(([id, , auditEntries]) => [id, auditEntries])));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load evidence provenance.");
     }
@@ -86,6 +120,7 @@ export function EvidenceProvider({ children, caseId }: { children: ReactNode; ca
                 {openIds.map((id, idx) => {
                   const record = records?.[id];
                   if (!record) return null;
+                  const recordAudits = audits[id] ?? [];
                   return (
                     <motion.div
                       key={id}
@@ -99,6 +134,27 @@ export function EvidenceProvider({ children, caseId }: { children: ReactNode; ca
                         <span className="font-mono text-[11px] text-text-faint">{record.id}</span>
                       </div>
                       <p className="mb-3 text-sm leading-relaxed text-text">{record.summary}</p>
+
+                      {caseId && sourceRecordHref(caseId, record.source) && (
+                        <a
+                          href={sourceRecordHref(caseId, record.source) ?? "#"}
+                          className="mb-3 inline-flex items-center rounded-md border border-border-soft bg-surface-2 px-2.5 py-1.5 text-xs font-medium text-text-dim hover:border-cyan/40 hover:text-cyan"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          View source record
+                        </a>
+                      )}
+
+                      {record.hasOriginalFile && (
+                        <button
+                          type="button"
+                          onClick={() => void downloadOriginal(record)}
+                          className="mb-3 inline-flex items-center gap-1.5 rounded-md border border-cyan/30 bg-cyan-dim px-2.5 py-1.5 text-xs font-medium text-cyan hover:border-cyan/50"
+                        >
+                          <Download size={12} />
+                          Download original file
+                        </button>
+                      )}
 
                       {record.ruleTriggered && (
                         <div className="mb-3 flex items-center gap-2 rounded-lg border border-cyan/20 bg-cyan-dim px-3 py-2">
@@ -128,6 +184,24 @@ export function EvidenceProvider({ children, caseId }: { children: ReactNode; ca
                             </div>
                           ))}
                         </div>
+                      </div>
+
+                      <div className="mt-3 border-t border-border-soft pt-3">
+                        <span className="mb-2 block font-mono text-[10px] uppercase tracking-wider text-text-faint">
+                          Audit trail ({recordAudits.length})
+                        </span>
+                        {recordAudits.length === 0 ? (
+                          <p className="text-xs text-text-faint">No audit events recorded.</p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {recordAudits.map((entry) => (
+                              <div key={entry.id} className="flex items-center justify-between gap-3 text-xs">
+                                <span className="font-medium text-text-dim">{entry.action}</span>
+                                <span className="text-text-faint">{entry.user} · {entry.timestamp}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   );

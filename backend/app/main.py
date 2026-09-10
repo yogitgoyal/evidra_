@@ -1,10 +1,11 @@
 # backend/app/main.py
 import os
+from datetime import datetime, timedelta, timezone
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +14,17 @@ from app.auth import decode_access_token, require_officer
 from app.deps import get_db
 from app.models.audit import AuditLogEntry
 from app.models.case import Case
-from app.models.datasets import EvidenceRecordRow
+from app.models.datasets import (
+    BankingRecord,
+    BankingUploadBatch,
+    CdrRecord,
+    EvidenceRecordRow,
+    IpdrRecord,
+    IpdrUploadBatch,
+    ReportRecord,
+    SocialRecord,
+    SocialUploadBatch,
+)
 from app.reports import REPORTS_DIR, build_report
 from app.routes.auth import router as auth_router
 from app.routes.banking import router as banking_router
@@ -149,8 +160,27 @@ async def get_overview(case_id: str, db: AsyncSession = Depends(get_db)):
     return await store.overview_for_case(case_id, db)
 
 @app.get("/cases/{case_id}/evidence", dependencies=[Depends(require_officer)])
-async def get_evidence_for_case(case_id: str, db: AsyncSession = Depends(get_db)):
-    records = await store.evidence_for_case(case_id, db)
+async def get_evidence_for_case(
+    case_id: str,
+    limit: int = Query(500, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    from_date: str | None = Query(None, alias="from"),
+    to_date: str | None = Query(None, alias="to"),
+    db: AsyncSession = Depends(get_db),
+):
+    def parse_date(value: str | None, end: bool = False) -> datetime | None:
+        if not value:
+            return None
+        parsed = datetime.fromisoformat(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed + timedelta(days=1) if end and len(value) == 10 else parsed
+
+    from_timestamp = parse_date(from_date)
+    to_timestamp = parse_date(to_date, end=True)
+    records = await store.evidence_for_case(case_id, db, limit=limit + 1, offset=offset, from_timestamp=from_timestamp, to_timestamp=to_timestamp)
+    has_more = len(records) > limit
+    records = records[:limit]
     return {
         "evidence": [
             {
@@ -158,12 +188,91 @@ async def get_evidence_for_case(case_id: str, db: AsyncSession = Depends(get_db)
                 "source": item.source,
                 "summary": item.summary,
                 "timestamp": item.timestamp,
+                "hash": item.hash,
+                "fields": item.fields,
                 "ruleTriggered": item.ruleTriggered,
                 "confidence": item.confidence,
             }
             for item in records
-        ]
+        ],
+        "hasMore": has_more,
     }
+
+
+async def _original_file_for_evidence(row: EvidenceRecordRow, db: AsyncSession) -> dict | None:
+    source_record = None
+    filename = None
+    content_type = None
+    content = None
+
+    if row.source == "CDR":
+        source_record = await db.get(CdrRecord, row.source_record_id)
+        if source_record is None:
+            filename = row.fields.get("originalFilename") if row.fields else None
+            if filename:
+                source_record = await db.scalar(
+                    select(CdrRecord).where(
+                        CdrRecord.case_id == row.case_id,
+                        CdrRecord.original_filename == filename,
+                        CdrRecord.original_file.is_not(None),
+                    )
+                )
+        if source_record is not None:
+            content = source_record.original_file
+            filename = source_record.original_filename
+            content_type = source_record.original_content_type
+    elif row.source == "Report":
+        source_record = await db.get(ReportRecord, row.source_record_id)
+        if source_record is not None:
+            content = source_record.original_file
+            filename = source_record.original_filename
+            content_type = source_record.original_content_type
+    elif row.source == "Banking":
+        source_record = await db.get(BankingRecord, row.source_record_id)
+        batch = await db.get(BankingUploadBatch, source_record.batch_id) if source_record and source_record.batch_id else None
+        if batch is not None:
+            content, filename, content_type = batch.original_file, batch.original_filename, batch.original_content_type
+    elif row.source == "Social":
+        source_record = await db.get(SocialRecord, row.source_record_id)
+        batch = await db.get(SocialUploadBatch, source_record.batch_id) if source_record and source_record.batch_id else None
+        if batch is not None:
+            content, filename, content_type = batch.original_file, batch.original_filename, batch.original_content_type
+    elif row.source == "IPDR":
+        source_record = await db.get(IpdrRecord, row.source_record_id)
+        batch = await db.get(IpdrUploadBatch, source_record.batch_id) if source_record and source_record.batch_id else None
+        if batch is not None:
+            content, filename, content_type = batch.original_file, batch.original_filename, batch.original_content_type
+
+    if not content:
+        return None
+    return {
+        "content": content,
+        "filename": filename or f"{row.source.lower()}-{row.source_record_id}",
+        "content_type": content_type or "application/octet-stream",
+    }
+
+
+@app.get("/cases/{case_id}/evidence/{evidence_id}/file", dependencies=[Depends(require_officer)])
+async def download_evidence_file(case_id: str, evidence_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    row = await db.scalar(select(EvidenceRecordRow).where(
+        EvidenceRecordRow.case_id == case_id, EvidenceRecordRow.id == evidence_id
+    ))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Evidence not found.")
+    original = await _original_file_for_evidence(row, db)
+    if original is None:
+        raise HTTPException(status_code=404, detail="Original file not found for this evidence.")
+    await _log_audit_event(
+        db,
+        case_id,
+        _request_actor(request),
+        "evidence_file_downloaded",
+        "evidence",
+        evidence_id,
+        {"source": row.source, "source_record_id": row.source_record_id, "filename": original["filename"]},
+    )
+    headers = {"Content-Disposition": f'attachment; filename="{str(original["filename"]).replace(chr(34), "")}"'}
+    return StreamingResponse(iter([original["content"]]), media_type=original["content_type"], headers=headers)
 
 
 @app.get("/cases/{case_id}/evidence/{evidence_id}", dependencies=[Depends(require_officer)])
@@ -183,10 +292,15 @@ async def get_evidence(case_id: str, evidence_id: str, request: Request, db: Asy
         evidence_id,
         {"source": row.source, "source_record_id": row.source_record_id, "rule": row.rule},
     )
+    original = await _original_file_for_evidence(row, db)
     return {
         "id": row.id, "source": row.source, "summary": f"{row.source} record {row.source_record_id}",
         "timestamp": row.timestamp.isoformat(), "hash": row.content_hash,
         "ingested": row.timestamp.isoformat(), "fields": row.fields, "ruleTriggered": row.rule,
+        "sourceRecordId": row.source_record_id,
+        "originalFilename": original["filename"] if original else None,
+        "originalContentType": original["content_type"] if original else None,
+        "hasOriginalFile": original is not None,
     }
 
 
@@ -295,12 +409,11 @@ async def download_report(case_id: str, request: Request, db: AsyncSession = Dep
 
 
 @app.get("/cases/{case_id}/audit", dependencies=[Depends(require_officer)])
-async def get_case_audit(case_id: str, db: AsyncSession = Depends(get_db)):
-    entries = await db.scalars(
-        select(AuditLogEntry)
-        .where(AuditLogEntry.case_id == case_id)
-        .order_by(AuditLogEntry.timestamp.desc(), AuditLogEntry.id.desc())
-    )
+async def get_case_audit(case_id: str, entity_id: str | None = Query(None), db: AsyncSession = Depends(get_db)):
+    query = select(AuditLogEntry).where(AuditLogEntry.case_id == case_id)
+    if entity_id:
+        query = query.where(AuditLogEntry.entity_id == entity_id)
+    entries = await db.scalars(query.order_by(AuditLogEntry.timestamp.desc(), AuditLogEntry.id.desc()))
     return [
         {
             "id": entry.id,

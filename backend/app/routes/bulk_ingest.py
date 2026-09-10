@@ -182,7 +182,14 @@ async def upload_banking_bulk(
         except (TypeError, ValueError, OverflowError) as error:
             rejected.append({"row": line_number, "reason": str(error)})
     if source_type == "paste":
-        result = await _commit(records, rejected, db)
+        if records:
+            db.add_all(records)
+        await store._ensure_provenance(db, case_id, records, "banking_paste_import")
+        result = {
+            "created": len(records),
+            "rejected": rejected,
+            "sample_ids": [record.id for record in records[:5]],
+        }
         result["has_source_file"] = False
         return result
 
@@ -200,6 +207,7 @@ async def upload_banking_bulk(
         await db.flush()
         if records:
             db.add_all(records)
+        await store._ensure_provenance(db, case_id, records, "banking_tabular_file_import")
         await db.commit()
     except Exception:
         await db.rollback()

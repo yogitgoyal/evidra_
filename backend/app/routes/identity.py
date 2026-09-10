@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.deps import get_db
 from app.models.case import Case
 from app.models.datasets import IdentityRecord
+from app.store import store
 
 router = APIRouter(tags=["identity"])
 
@@ -38,6 +39,7 @@ async def create_identity(case_id: str, payload: IdentityCreate, db: AsyncSessio
         timestamp=payload.timestamp or datetime.utcnow(), attributes={},
     )
     db.add(record)
+    await store._ensure_provenance(db, case_id, [record], "identity_manual_entry")
     await db.commit()
     await db.refresh(record)
     return record

@@ -5,7 +5,7 @@ from itertools import combinations
 import ipaddress
 from difflib import SequenceMatcher
 from app.seed import cases, active_case, entities, edges, evidence, evidence_by_id, timeline, story_claims, copilot_seed, alerts, weekly_activity
-from datetime import timedelta
+from datetime import datetime, timedelta
 import hashlib
 import json
 import os
@@ -108,6 +108,8 @@ class DataStore:
                 source, fields, rule = "IPDR", {"sourceIp": row.source_ip, "destinationIp": row.destination_ip, "protocol": row.protocol}, "SHARED_IP_IDENTITIES" if row.attributes.get("identity_id") else "IP_CONNECTION"
             elif isinstance(row, BankingRecord):
                 source, fields, rule = "Banking", {"sender": row.sender, "recipient": row.recipient, "amount": float(row.amount), "channel": row.channel}, "HIGH_VALUE_TRANSACTION" if float(row.amount) >= 10000 else "BANKING_TRANSACTION"
+            elif isinstance(row, IdentityRecord):
+                source, fields, rule = "Identity", {"subject": row.subject, "documentType": row.document_type, "documentHash": row.document_hash}, "IDENTITY_RECORD"
             else:
                 source, fields, rule = "Social", {"actor": row.actor, "target": row.target, "platform": row.platform, "interaction": row.interaction}, "CLOSED_SOCIAL_LOOP"
             canonical = json.dumps({"source": source, "recordId": row.id, "fields": fields, "rule": rule}, sort_keys=True)
@@ -644,10 +646,24 @@ class DataStore:
     def evidence_by_id_lookup(self, evidence_id: str) -> EvidenceRecord | None:
         return self.evidence_by_id.get(evidence_id)
 
-    async def evidence_for_case(self, case_id: str, db: AsyncSession) -> list[EvidenceRecord]:
+    async def evidence_for_case(
+        self,
+        case_id: str,
+        db: AsyncSession,
+        limit: int = 500,
+        offset: int = 0,
+        from_timestamp: datetime | None = None,
+        to_timestamp: datetime | None = None,
+    ) -> list[EvidenceRecord]:
         if await db.get(Case, case_id) is None:
             raise HTTPException(status_code=404, detail="Case not found.")
-        rows = list(await db.scalars(select(EvidenceRecordRow).where(EvidenceRecordRow.case_id == case_id)))
+        query = select(EvidenceRecordRow).where(EvidenceRecordRow.case_id == case_id)
+        if from_timestamp:
+            query = query.where(EvidenceRecordRow.timestamp >= from_timestamp)
+        if to_timestamp:
+            query = query.where(EvidenceRecordRow.timestamp < to_timestamp)
+        query = query.order_by(EvidenceRecordRow.timestamp.desc(), EvidenceRecordRow.id.desc()).offset(offset).limit(limit)
+        rows = list(await db.scalars(query))
         return [EvidenceRecord(
             id=row.id, source=row.source, summary=f"{row.source} record {row.source_record_id}",
             timestamp=row.timestamp.isoformat(), hash=row.content_hash,

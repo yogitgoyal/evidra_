@@ -397,11 +397,44 @@ export function getGeo(caseId: string): Promise<GeoEvent[]> {
   return request(`/cases/${caseId}/geo`);
 }
 
-export function getEvidence(caseId: string): Promise<{ evidence: EvidenceRecord[] }> {
-  return request(`/cases/${caseId}/evidence`);
+export function getEvidence(
+  caseId: string,
+  options: { limit?: number; offset?: number; fromDate?: string; toDate?: string } = {},
+): Promise<{ evidence: EvidenceRecord[]; hasMore: boolean }> {
+  const query = new URLSearchParams();
+  if (options.limit !== undefined) query.set("limit", String(options.limit));
+  if (options.offset !== undefined) query.set("offset", String(options.offset));
+  if (options.fromDate) query.set("from", options.fromDate);
+  if (options.toDate) query.set("to", options.toDate);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return request(`/cases/${caseId}/evidence${suffix}`);
 }
 export function getEvidenceRecord(caseId: string, evidenceId: string): Promise<EvidenceRecord> {
   return request(`/cases/${caseId}/evidence/${evidenceId}`);
+}
+
+export async function downloadEvidenceFile(caseId: string, evidenceId: string): Promise<Blob> {
+  const response = await fetch(`${API_BASE}/cases/${caseId}/evidence/${evidenceId}/file`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`Failed to download original file: ${response.status}`);
+  return response.blob();
+}
+
+export interface AuditEntry {
+  id: string;
+  case_id: string;
+  user: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  timestamp: string;
+  details: Record<string, unknown>;
+}
+
+export function getCaseAudit(caseId: string, entityId?: string): Promise<AuditEntry[]> {
+  const query = entityId ? `?entity_id=${encodeURIComponent(entityId)}` : "";
+  return request(`/cases/${caseId}/audit${query}`);
 }
 
 export function getCopilotSeed(caseId: string): Promise<CopilotMessage[]> {

@@ -57,6 +57,10 @@ export interface EvidenceRecord {
   fields: Record<string, string | number>;
   ruleTriggered?: string;
   confidence?: number;
+  sourceRecordId?: string;
+  originalFilename?: string | null;
+  originalContentType?: string | null;
+  hasOriginalFile?: boolean;
 }
 
 export interface TimelineEvent {

@@ -1,6 +1,7 @@
 import csv
 import hashlib
 import io
+import ipaddress
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -13,7 +14,7 @@ from app.deps import get_db
 from app.cdr_file_extractors import extract_cdr_rows
 from app.models.case import Case
 from app.models.audit import AuditLogEntry
-from app.models.datasets import BankingRecord, BankingUploadBatch, CdrRecord, EvidenceRecordRow, SocialRecord, SocialUploadBatch
+from app.models.datasets import BankingRecord, BankingUploadBatch, CdrRecord, EvidenceRecordRow, IpdrRecord, IpdrUploadBatch, SocialRecord, SocialUploadBatch
 from app.store import store
 
 router = APIRouter(tags=["bulk-ingestion"])
@@ -338,6 +339,124 @@ async def get_social_bulk_upload_file(
     )
     if batch is None:
         raise HTTPException(status_code=404, detail="Social upload batch not found.")
+    filename = batch.original_filename.replace('"', "")
+    return Response(
+        content=batch.original_file,
+        media_type=batch.original_content_type or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@router.post("/cases/{case_id}/ipdr/bulk")
+async def upload_ipdr_bulk(
+    case_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    source_type: str | None = Form(None),
+) -> dict:
+    await _case_or_404(case_id, db)
+    if source_type not in {None, "file", "paste"}:
+        raise HTTPException(status_code=400, detail="source_type must be file or paste.")
+    file_bytes = await file.read()
+    try:
+        rows = extract_cdr_rows(file.filename or "", file.content_type, file_bytes)
+    except (ValueError, TypeError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    records = []
+    rejected = []
+    for line_number, row in rows:
+        try:
+            _required(row, ("source_ip", "destination_ip"))
+            for field_name in ("source_ip", "destination_ip"):
+                try:
+                    ipaddress.ip_address(row[field_name])
+                except ValueError as error:
+                    raise ValueError(
+                        f"{field_name} must be a valid IPv4 or IPv6 address"
+                    ) from error
+            records.append(IpdrRecord(
+                id=str(uuid4()),
+                case_id=case_id,
+                batch_id=None,
+                source_ip=row["source_ip"],
+                destination_ip=row["destination_ip"],
+                protocol=row.get("protocol") or "TCP",
+                timestamp=_timestamp(row.get("timestamp")),
+                attributes={},
+            ))
+        except (TypeError, ValueError, OverflowError) as error:
+            rejected.append({"row": line_number, "reason": str(error)})
+
+    batch = None
+    if source_type != "paste":
+        batch = IpdrUploadBatch(
+            id=f"ipdr_upload_{uuid4()}",
+            case_id=case_id,
+            original_filename=file.filename or "ipdr.csv",
+            original_content_type=file.content_type,
+            original_file=file_bytes,
+        )
+        db.add(batch)
+        await db.flush()
+        for record in records:
+            record.batch_id = batch.id
+
+    audit = AuditLogEntry(
+        case_id=case_id,
+        user="system",
+        action="ipdr_file_uploaded" if source_type != "paste" else "ipdr_paste_imported",
+        entity_type="ipdr_upload",
+        entity_id=batch.id if batch else None,
+        details={
+            "source_type": source_type or "file",
+            "original_filename": file.filename if source_type != "paste" else None,
+            "original_content_type": file.content_type if source_type != "paste" else None,
+            "created": len(records),
+            "rejected": len(rejected),
+        },
+    )
+    db.add_all(records)
+    db.add(audit)
+    try:
+        await store._ensure_provenance(
+            db,
+            case_id,
+            records,
+            "ipdr_tabular_file_import" if source_type != "paste" else "ipdr_paste_import",
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    result = {
+        "created": len(records),
+        "rejected": rejected,
+        "sample_ids": [record.id for record in records[:5]],
+    }
+    if batch is None:
+        result["has_source_file"] = False
+    else:
+        result["batch_id"] = batch.id
+        result["has_source_file"] = True
+    return result
+
+
+@router.get("/cases/{case_id}/ipdr/bulk-uploads/{batch_id}/file")
+async def get_ipdr_bulk_upload_file(
+    case_id: str,
+    batch_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    batch = await db.scalar(
+        select(IpdrUploadBatch).where(
+            IpdrUploadBatch.id == batch_id,
+            IpdrUploadBatch.case_id == case_id,
+        )
+    )
+    if batch is None:
+        raise HTTPException(status_code=404, detail="IPDR upload batch not found.")
     filename = batch.original_filename.replace('"', "")
     return Response(
         content=batch.original_file,

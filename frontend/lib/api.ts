@@ -181,6 +181,26 @@ export function listIpdr(caseId: string): Promise<IpdrRecord[]> {
   return request(`/cases/${caseId}/ipdr`);
 }
 
+export function uploadIpdrBulk(
+  caseId: string,
+  file: File,
+  sourceType: "file" | "paste" = "file",
+): Promise<BulkUploadResponse> {
+  return uploadBulk(`/cases/${caseId}/ipdr/bulk`, file, sourceType);
+}
+
+export function ipdrBulkUploadFileUrl(caseId: string, batchId: string): string {
+  return `${API_BASE}/cases/${caseId}/ipdr/bulk-uploads/${batchId}/file`;
+}
+
+export async function downloadIpdrBulkUploadFile(caseId: string, batchId: string): Promise<Blob> {
+  const response = await fetch(ipdrBulkUploadFileUrl(caseId, batchId), {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`Failed to download IPDR upload: ${response.status}`);
+  return response.blob();
+}
+
 export interface IdentityRecord {
   id: string;
   case_id: string;

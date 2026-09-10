@@ -112,6 +112,20 @@ export const entityColorMap2D: Record<
   },
 };
 
+const entityTypePrefix: Record<EntityType, string> = {
+  person: "Person",
+  phone: "Phone",
+  sim: "SIM",
+  device: "Device",
+  ip: "IP",
+  account: "Bank Account",
+  upi: "UPI",
+  tower: "Cell Tower",
+  location: "Location",
+  social: "Social Profile",
+  vehicle: "Vehicle",
+};
+
 export function InvestigationGraph({
   onSelect,
   filterTypes,
@@ -156,6 +170,21 @@ export function InvestigationGraph({
         .map(([nodeId]) => nodeId),
     );
   }, [activeEdges]);
+  const possibleIdentifierNodeIds = useMemo(() => {
+    const entityTypes = new Map(activeEntities.map((entity) => [entity.id, entity.type]));
+    const nodeIds = new Set<string>();
+    activeEdges.forEach((edge) => {
+      if (
+        edge.kind === "POSSIBLE_SAME_IDENTIFIER" &&
+        edge.confidence === "ambiguous" &&
+        entityTypes.get(edge.source) !== entityTypes.get(edge.target)
+      ) {
+        nodeIds.add(edge.source);
+        nodeIds.add(edge.target);
+      }
+    });
+    return nodeIds;
+  }, [activeEntities, activeEdges]);
   const layoutSeed = useMemo(
     () => graphSeed(activeEntities.map((entity) => entity.id)),
     [activeEntities],
@@ -172,7 +201,9 @@ export function InvestigationGraph({
       return {
         data: {
           id: e.id,
-          label: e.label,
+          label: possibleIdentifierNodeIds.has(e.id)
+            ? `${entityTypePrefix[e.type]} · ${e.label}`
+            : e.label,
           sublabel: e.sublabel,
           type: e.type,
           risk: e.risk,
@@ -198,7 +229,7 @@ export function InvestigationGraph({
     }));
 
     return [...nodes, ...links];
-  }, [activeEntities, activeEdges, denseNodeIds]);
+  }, [activeEntities, activeEdges, denseNodeIds, possibleIdentifierNodeIds]);
   const elementsRef = useRef(elements);
 
   useEffect(() => {

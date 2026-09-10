@@ -1,5 +1,8 @@
 # backend/app/store.py
 import asyncio
+from collections import defaultdict
+from itertools import combinations
+import ipaddress
 from app.seed import cases, active_case, entities, edges, evidence, evidence_by_id, timeline, story_claims, copilot_seed, alerts, weekly_activity
 from datetime import timedelta
 import hashlib
@@ -18,6 +21,37 @@ from app.models import FinancialFlowResponse, FinancialFlowNode, FinancialFlowLi
 from app.models import CopilotMessage, StoryClaim
 
 TIMELINE_MAX_EVENTS = 2000
+
+
+def normalize_phone(value: str) -> str:
+    digits = re.sub(r"\D", "", value)
+    if digits.startswith("0") and len(digits) in {11, 13}:
+        digits = digits[1:]
+    if digits.startswith("91") and len(digits) == 12:
+        digits = digits[2:]
+    return digits
+
+
+def normalize_account(value: str) -> str:
+    return re.sub(r"\s+", "", value).casefold()
+
+
+def normalize_entity_value(entity_type: str, value: str) -> str:
+    if entity_type == "phone":
+        return normalize_phone(value)
+    if entity_type == "ip":
+        try:
+            return str(ipaddress.ip_address(value.strip()))
+        except ValueError:
+            return value.strip().casefold()
+    if entity_type in {"account", "upi"}:
+        return normalize_account(value)
+    return re.sub(r"\s+", " ", value.strip()).casefold()
+
+
+def entity_id(entity_type: str, value: str) -> tuple[str, str]:
+    normalized = normalize_entity_value(entity_type, value)
+    return f"{entity_type}:{normalized}", normalized
 
 class DataStore:
     def __init__(self):
@@ -365,29 +399,60 @@ class DataStore:
                         ip_identities.setdefault(item.destination_ip, set()).add(identity)
                 shared_ips = {ip for ip, identities_for_ip in ip_identities.items() if len(identities_for_ip) > 1}
                 social_links = {(item.actor, item.target) for item in social}
-                def add_entity(entity_id, entity_type, label):
-                    entities.setdefault(entity_id, Entity(id=entity_id, type=entity_type, label=label, risk=0, confidence="high", tags=[]))
+                entity_keys: dict[str, tuple[str, str]] = {}
+
+                def add_entity(entity_type, label):
+                    canonical_id, normalized_value = entity_id(entity_type, label)
+                    entities.setdefault(canonical_id, Entity(id=canonical_id, type=entity_type, label=label, risk=0, confidence="high", tags=[]))
+                    entity_keys[canonical_id] = (entity_type, normalized_value)
+                    return canonical_id
+
                 for row in cdr:
-                    add_entity(row.caller, "phone", row.caller); add_entity(row.callee, "phone", row.callee)
-                    edges.append(GraphEdge(id=row.id, source=row.caller, target=row.callee, kind="CALLED", confidence="high", weight=3 if row.attributes.get("identity_id") in shared_identities else 1, evidenceId=evidence_ids[row.id], evidenceIds=[evidence_ids[row.id]]))
+                    caller_id = add_entity("phone", row.caller)
+                    callee_id = add_entity("phone", row.callee)
+                    edges.append(GraphEdge(id=row.id, source=caller_id, target=callee_id, kind="CALLED", confidence="high", weight=3 if row.attributes.get("identity_id") in shared_identities else 1, evidenceId=evidence_ids[row.id], evidenceIds=[evidence_ids[row.id]]))
                 for row in ipdr:
-                    add_entity(row.source_ip, "ip", row.source_ip); add_entity(row.destination_ip, "ip", row.destination_ip)
-                    edges.append(GraphEdge(id=row.id, source=row.source_ip, target=row.destination_ip, kind="MESSAGED", confidence="high", weight=3 if row.source_ip in shared_ips or row.destination_ip in shared_ips else 1, evidenceId=evidence_ids[row.id], evidenceIds=[evidence_ids[row.id]]))
+                    source_id = add_entity("ip", row.source_ip)
+                    destination_id = add_entity("ip", row.destination_ip)
+                    edges.append(GraphEdge(id=row.id, source=source_id, target=destination_id, kind="MESSAGED", confidence="high", weight=3 if row.source_ip in shared_ips or row.destination_ip in shared_ips else 1, evidenceId=evidence_ids[row.id], evidenceIds=[evidence_ids[row.id]]))
                 for row in banking:
-                    sender_id, recipient_id = f"account:{row.sender}", f"account:{row.recipient}"
-                    add_entity(sender_id, "account", row.sender); add_entity(recipient_id, "account", row.recipient)
+                    sender_id = add_entity("account", row.sender)
+                    recipient_id = add_entity("account", row.recipient)
                     edges.append(GraphEdge(id=row.id, source=sender_id, target=recipient_id, kind="TRANSFERRED_TO", confidence="high", weight=1, evidenceId=evidence_ids[row.id], evidenceIds=[evidence_ids[row.id]]))
                 for row in social:
-                    add_entity(row.actor, "social", row.actor); add_entity(row.target, "social", row.target)
-                    edges.append(GraphEdge(id=row.id, source=row.actor, target=row.target, kind="MENTIONED", confidence="high", weight=3 if (row.target, row.actor) in social_links else 1, evidenceId=evidence_ids[row.id], evidenceIds=[evidence_ids[row.id]]))
+                    actor_id = add_entity("social", row.actor)
+                    target_id = add_entity("social", row.target)
+                    edges.append(GraphEdge(id=row.id, source=actor_id, target=target_id, kind="MENTIONED", confidence="high", weight=3 if (row.target, row.actor) in social_links else 1, evidenceId=evidence_ids[row.id], evidenceIds=[evidence_ids[row.id]]))
                 for report in reports:
                     for extracted in report.extracted_entities:
                         entity_type = extracted.get("type")
                         value = extracted.get("value")
                         if entity_type not in {"person", "phone", "ip", "location", "vehicle"} or not value:
                             continue
-                        entity_id = value if entity_type in {"phone", "ip"} else f"{entity_type}:{value}"
-                        add_entity(entity_id, entity_type, value)
+                        add_entity(entity_type, value)
+                possible_matches: dict[str, list[str]] = defaultdict(list)
+                for graph_entity_id, (_, normalized_value) in entity_keys.items():
+                    possible_matches[normalized_value].append(graph_entity_id)
+                existing_possible_edges = set()
+                for graph_entity_ids in possible_matches.values():
+                    for left_id, right_id in combinations(sorted(set(graph_entity_ids)), 2):
+                        left_type = entity_keys[left_id][0]
+                        right_type = entity_keys[right_id][0]
+                        if left_type == right_type:
+                            continue
+                        edge_key = (left_id, right_id)
+                        if edge_key in existing_possible_edges:
+                            continue
+                        existing_possible_edges.add(edge_key)
+                        edges.append(GraphEdge(
+                            id=f"possible_same_identifier:{left_id}:{right_id}",
+                            source=left_id,
+                            target=right_id,
+                            kind="POSSIBLE_SAME_IDENTIFIER",
+                            confidence="ambiguous",
+                            weight=1,
+                            evidenceIds=[],
+                        ))
                 return GraphResponse(entities=list(entities.values()), edges=edges, fraudMetrics=await self.fraud_analysis(case_id, db))
         case_ids = {case.id for case in self.cases}
         ents = list(self.entities) if case_id in case_ids else []

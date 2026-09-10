@@ -4,7 +4,7 @@ from pydantic import BaseModel
 # ---------- Shared enums ----------
 EntityType = Literal["person","phone","sim","device","ip","account","upi","tower","location","social","vehicle"]
 MatchConfidence = Literal["high","ambiguous","none"]
-EdgeKind = Literal["CALLED","MESSAGED","TRANSFERRED_TO","OWNS","USES","LOCATED_AT","MENTIONED","CO_OCCURRED","SHARED_DEVICE","SHARED_LOCATION"]
+EdgeKind = Literal["CALLED","MESSAGED","TRANSFERRED_TO","OWNS","USES","LOCATED_AT","MENTIONED","CO_OCCURRED","SHARED_DEVICE","SHARED_LOCATION","POSSIBLE_SAME_IDENTIFIER"]
 EvidenceSource = Literal["CDR","IPDR","Banking","Social","Identity","Report"]
 TimelineType = Literal["banking","telecom","social","location"]
 TimelineSeverity = Literal["critical","high","watch","info","medium","low"]

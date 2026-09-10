@@ -3,7 +3,14 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { createSocial, listSocial, SocialRecord, uploadSocialBulk, BulkUploadResponse } from "@/lib/api";
+import {
+  createSocial,
+  downloadSocialBulkUploadFile,
+  listSocial,
+  SocialRecord,
+  uploadSocialBulk,
+  BulkUploadResponse,
+} from "@/lib/api";
 
 export default function CaseSocialPage() {
   const params = useParams();
@@ -20,6 +27,7 @@ export default function CaseSocialPage() {
   const [bulkText, setBulkText] = useState("");
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkResult, setBulkResult] = useState<BulkUploadResponse | null>(null);
+  const [sourceFileUrl, setSourceFileUrl] = useState<string | null>(null);
 
   async function loadRecords() {
     try {
@@ -33,6 +41,24 @@ export default function CaseSocialPage() {
   useEffect(() => {
     if (caseId) loadRecords();
   }, [caseId]);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    const batchId = bulkResult?.has_source_file ? bulkResult.batch_id : undefined;
+    if (!batchId) {
+      setSourceFileUrl(null);
+      return;
+    }
+    downloadSocialBulkUploadFile(caseId, batchId)
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        setSourceFileUrl(objectUrl);
+      })
+      .catch(() => setSourceFileUrl(null));
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [caseId, bulkResult]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -78,7 +104,7 @@ export default function CaseSocialPage() {
         setError("Choose a CSV file or paste CSV content first.");
         return;
       }
-      setBulkResult(await uploadSocialBulk(caseId, uploadFile));
+      setBulkResult(await uploadSocialBulk(caseId, uploadFile, bulkText.trim() ? "paste" : "file"));
       setBulkFile(null);
       setBulkText("");
       await loadRecords();
@@ -150,12 +176,12 @@ export default function CaseSocialPage() {
 
       <form onSubmit={handleBulkSubmit} className="space-y-4 rounded-xl border border-cyan/30 bg-surface p-6">
         <div>
-          <h2 className="text-sm font-semibold text-text">Bulk CSV upload</h2>
+          <h2 className="text-sm font-semibold text-text">Bulk CSV/XLSX upload</h2>
           <p className="mt-1 text-xs text-text-faint">Columns: actor, target, platform, interaction, timestamp</p>
         </div>
         <input
           type="file"
-          accept=".csv,text/csv"
+          accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           onChange={(e) => setBulkFile(e.target.files?.[0] ?? null)}
           className="block w-full text-sm text-text-faint"
         />
@@ -167,11 +193,21 @@ export default function CaseSocialPage() {
            className="w-full rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text outline-none focus:border-cyan/50"
          />
          <button type="submit" disabled={bulkLoading} className="rounded-lg border border-cyan px-4 py-2 text-sm font-medium text-cyan disabled:opacity-50">
-          {bulkLoading ? "Uploading..." : "Upload CSV"}
+          {bulkLoading ? "Uploading..." : "Upload CSV/XLSX"}
         </button>
         {bulkResult && (
           <div className="space-y-2 text-sm text-text">
             <p>{bulkResult.created} records added, {bulkResult.rejected.length} rejected.</p>
+            {bulkResult.has_source_file && bulkResult.batch_id && sourceFileUrl && (
+              <a
+                href={sourceFileUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-cyan underline"
+              >
+                View original CSV/XLSX
+              </a>
+            )}
             {bulkResult.rejected.length > 0 && (
               <details>
                 <summary className="cursor-pointer text-text-faint">Rejected rows</summary>

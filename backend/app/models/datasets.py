@@ -46,6 +46,19 @@ class BankingUploadBatch(Base):
     )
 
 
+class SocialUploadBatch(Base):
+    __tablename__ = "social_upload_batches"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    case_id: Mapped[str] = mapped_column(ForeignKey("cases.id"), nullable=False, index=True)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    original_content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    original_file: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class BankingRecord(CaseLinkedRecord):
     __tablename__ = "banking_records"
     batch_id: Mapped[str | None] = mapped_column(
@@ -60,6 +73,9 @@ class BankingRecord(CaseLinkedRecord):
 
 class SocialRecord(CaseLinkedRecord):
     __tablename__ = "social_records"
+    batch_id: Mapped[str | None] = mapped_column(
+        ForeignKey("social_upload_batches.id"), nullable=True
+    )
     actor: Mapped[str] = mapped_column(String(128), nullable=False)
     target: Mapped[str] = mapped_column(String(128), nullable=False)
     platform: Mapped[str] = mapped_column(String(64), nullable=False)

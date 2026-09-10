@@ -266,8 +266,24 @@ export function listSocial(caseId: string): Promise<SocialRecord[]> {
   return request(`/cases/${caseId}/social`);
 }
 
-export function uploadSocialBulk(caseId: string, file: File): Promise<BulkUploadResponse> {
-  return uploadBulk(`/cases/${caseId}/social/bulk`, file);
+export function uploadSocialBulk(
+  caseId: string,
+  file: File,
+  sourceType: "file" | "paste" = "file",
+): Promise<BulkUploadResponse> {
+  return uploadBulk(`/cases/${caseId}/social/bulk`, file, sourceType);
+}
+
+export function socialBulkUploadFileUrl(caseId: string, batchId: string): string {
+  return `${API_BASE}/cases/${caseId}/social/bulk-uploads/${batchId}/file`;
+}
+
+export async function downloadSocialBulkUploadFile(caseId: string, batchId: string): Promise<Blob> {
+  const response = await fetch(socialBulkUploadFileUrl(caseId, batchId), {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`Failed to download social upload: ${response.status}`);
+  return response.blob();
 }
 
 export interface ReportEntity {

@@ -13,7 +13,8 @@ from app.deps import get_db
 from app.cdr_file_extractors import extract_cdr_rows
 from app.models.case import Case
 from app.models.audit import AuditLogEntry
-from app.models.datasets import BankingRecord, BankingUploadBatch, CdrRecord, EvidenceRecordRow, SocialRecord
+from app.models.datasets import BankingRecord, BankingUploadBatch, CdrRecord, EvidenceRecordRow, SocialRecord, SocialUploadBatch
+from app.store import store
 
 router = APIRouter(tags=["bulk-ingestion"])
 
@@ -234,16 +235,30 @@ async def get_banking_bulk_upload_file(
 
 
 @router.post("/cases/{case_id}/social/bulk")
-async def upload_social_bulk(case_id: str, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)) -> dict:
+async def upload_social_bulk(
+    case_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    source_type: str | None = Form(None),
+) -> dict:
     await _case_or_404(case_id, db)
+    if source_type not in {None, "file", "paste"}:
+        raise HTTPException(status_code=400, detail="source_type must be file or paste.")
+    file_bytes = await file.read()
+    try:
+        rows = extract_cdr_rows(file.filename or "", file.content_type, file_bytes)
+    except (ValueError, TypeError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
     records = []
     rejected = []
-    for line_number, row in await _rows(file):
+    for line_number, row in rows:
         try:
             _required(row, ("actor", "target"))
             records.append(SocialRecord(
                 id=str(uuid4()),
                 case_id=case_id,
+                batch_id=None,
                 actor=row["actor"],
                 target=row["target"],
                 platform=row.get("platform") or "Unknown",
@@ -253,7 +268,82 @@ async def upload_social_bulk(case_id: str, file: UploadFile = File(...), db: Asy
             ))
         except (TypeError, ValueError, OverflowError) as error:
             rejected.append({"row": line_number, "reason": str(error)})
-    return await _commit(records, rejected, db)
+
+    batch = None
+    if source_type != "paste":
+        batch = SocialUploadBatch(
+            id=f"social_upload_{uuid4()}",
+            case_id=case_id,
+            original_filename=file.filename or "social.csv",
+            original_content_type=file.content_type,
+            original_file=file_bytes,
+        )
+        for record in records:
+            record.batch_id = batch.id
+        db.add(batch)
+        await db.flush()
+
+    audit = AuditLogEntry(
+        case_id=case_id,
+        user="system",
+        action="social_file_uploaded" if source_type != "paste" else "social_paste_imported",
+        entity_type="social_upload",
+        entity_id=batch.id if batch else None,
+        details={
+            "source_type": source_type or "file",
+            "original_filename": file.filename if source_type != "paste" else None,
+            "original_content_type": file.content_type if source_type != "paste" else None,
+            "created": len(records),
+            "rejected": len(rejected),
+        },
+    )
+    db.add_all(records)
+    db.add(audit)
+    try:
+        await store._ensure_provenance(
+            db,
+            case_id,
+            records,
+            "social_tabular_file_import" if source_type != "paste" else "social_paste_import",
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    result = {
+        "created": len(records),
+        "rejected": rejected,
+        "sample_ids": [record.id for record in records[:5]],
+    }
+    if batch is None:
+        result["has_source_file"] = False
+    else:
+        result["batch_id"] = batch.id
+        result["has_source_file"] = True
+    return result
+
+
+@router.get("/cases/{case_id}/social/bulk-uploads/{batch_id}/file")
+async def get_social_bulk_upload_file(
+    case_id: str,
+    batch_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    batch = await db.scalar(
+        select(SocialUploadBatch).where(
+            SocialUploadBatch.id == batch_id,
+            SocialUploadBatch.case_id == case_id,
+        )
+    )
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Social upload batch not found.")
+    filename = batch.original_filename.replace('"', "")
+    return Response(
+        content=batch.original_file,
+        media_type=batch.original_content_type or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @router.post("/cases/demo-seed", status_code=201)

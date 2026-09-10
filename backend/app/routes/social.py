@@ -8,7 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db
 from app.models.case import Case
+from app.models.audit import AuditLogEntry
 from app.models.datasets import SocialRecord
+from app.store import store
 
 router = APIRouter(tags=["social"])
 
@@ -49,8 +51,24 @@ async def create_social(case_id: str, payload: SocialCreate, db: AsyncSession = 
         timestamp=payload.timestamp or datetime.utcnow(),
         attributes={},
     )
+    audit = AuditLogEntry(
+        case_id=case_id,
+        user="system",
+        action="social_record_created",
+        entity_type="social_record",
+        entity_id=record.id,
+        details={
+            "source_type": "manual",
+            "actor": record.actor,
+            "target": record.target,
+            "platform": record.platform,
+            "interaction": record.interaction,
+        },
+    )
     db.add(record)
+    db.add(audit)
     try:
+        await store._ensure_provenance(db, case_id, [record], "social_manual_entry")
         await db.commit()
     except Exception:
         await db.rollback()
@@ -61,6 +79,9 @@ async def create_social(case_id: str, payload: SocialCreate, db: AsyncSession = 
 
 @router.get("/cases/{case_id}/social", response_model=list[SocialRead])
 async def list_social(case_id: str, db: AsyncSession = Depends(get_db)) -> list[SocialRecord]:
+    if await db.get(Case, case_id) is None:
+        raise HTTPException(status_code=404, detail="Case not found.")
+
     result = await db.scalars(
         select(SocialRecord).where(SocialRecord.case_id == case_id).order_by(SocialRecord.timestamp.desc())
     )

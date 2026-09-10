@@ -12,7 +12,7 @@ import { TimelineSparkline } from "@/components/timeline/TimelineSparkline";
 import { cn } from "@/lib/utils";
 import { History, Filter, AlertTriangle, ShieldCheck } from "lucide-react";
 
-const sources = ["CDR", "IPDR", "Banking", "Social"] as const;
+const sources = ["CDR", "IPDR", "Banking", "Social", "Identity", "Report"] as const;
 const severityDot: Record<string, string> = {
   high: "bg-red",
   watch: "bg-amber",
@@ -25,16 +25,20 @@ export default function TimelinePage() {
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [entities] = useState<Entity[]>([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
   const [activeSources, setActiveSources] = useState<Set<string>>(new Set(sources));
 
   useEffect(() => {
     if (!caseId) return;
-    getTimeline(caseId).then(setTimeline).catch((err: Error) => setError(err.message));
+    getTimeline(caseId)
+      .then(setTimeline)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
   }, [caseId]);
 
   const filtered = useMemo(
     () => timeline.filter((t) => activeSources.has(t.source)),
-    [activeSources]
+    [activeSources, timeline]
   );
 
   const highSignalCount = useMemo(
@@ -79,6 +83,7 @@ export default function TimelinePage() {
             <button
               key={s}
               onClick={() => toggle(s)}
+              aria-pressed={activeSources.has(s)}
               className={cn(
                 "rounded-full border px-2.5 py-1 text-[10.5px] font-medium transition-all",
                 activeSources.has(s)
@@ -93,12 +98,21 @@ export default function TimelinePage() {
       </div>
 
       {/* Task 4: Interactive Activity Intensity Heatmap Sparkline */}
-      <TimelineSparkline onSelectEvent={handleSelectEvent} />
+      {loading ? (
+        <Card className="p-6 text-sm text-text-faint">Loading timeline events...</Card>
+      ) : (
+        <TimelineSparkline timeline={timeline} onSelectEvent={handleSelectEvent} />
+      )}
 
       {/* Main 12-Column Responsive Layout Split */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Main Event Timeline Sequence (Col 8) */}
         <Card className="p-6 lg:col-span-8">
+          {loading ? (
+            <div className="rounded-xl border border-dashed border-border-soft p-8 text-center text-sm text-text-faint">
+              Loading timeline events...
+            </div>
+          ) : (
           <div className="relative">
             <div className="absolute bottom-2 left-[7px] top-2 w-px bg-border-soft" />
             <div className="space-y-6">
@@ -149,8 +163,14 @@ export default function TimelinePage() {
                   </div>
                 </motion.div>
               ))}
+              {!loading && filtered.length === 0 && (
+                <div className="rounded-xl border border-dashed border-border-soft p-8 text-center text-sm text-text-faint">
+                  No timeline events for this case.
+                </div>
+              )}
             </div>
           </div>
+          )}
         </Card>
 
         {/* Right Sidebar: Timeline Intelligence Breakdown (Col 4) */}
@@ -182,7 +202,7 @@ export default function TimelinePage() {
             <div className="space-y-2.5">
               {sources.map((s) => {
                 const count = timeline.filter((t) => t.source === s).length;
-                const pct = Math.round((count / timeline.length) * 100);
+                const pct = timeline.length === 0 ? 0 : Math.round((count / timeline.length) * 100);
                 return (
                   <div key={s} className="space-y-1">
                     <div className="flex items-center justify-between text-xs">

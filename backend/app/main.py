@@ -2,7 +2,7 @@
 import os
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -24,7 +24,7 @@ from app.routes.identity import router as identity_router
 from app.routes.ipdr import router as ipdr_router
 from app.routes.reports import router as reports_router
 from app.routes.social import router as social_router
-from app.store import store
+from app.store import TIMELINE_MAX_EVENTS, store
 
 load_dotenv()
 
@@ -136,8 +136,13 @@ async def get_risk_factors(case_id: str, db: AsyncSession = Depends(get_db)):
     return await store.risk_factors_for_case(case_id, db)
 
 @app.get("/cases/{case_id}/timeline", dependencies=[Depends(require_officer)])
-async def get_timeline(case_id: str, db: AsyncSession = Depends(get_db)):
-    return await store.timeline_for_case(case_id, db)
+async def get_timeline(
+    case_id: str,
+    limit: int = Query(default=TIMELINE_MAX_EVENTS, ge=1, le=TIMELINE_MAX_EVENTS),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    return await store.timeline_for_case(case_id, db, limit=limit, offset=offset)
 
 @app.get("/cases/{case_id}/overview", dependencies=[Depends(require_officer)])
 async def get_overview(case_id: str, db: AsyncSession = Depends(get_db)):

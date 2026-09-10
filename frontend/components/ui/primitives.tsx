@@ -106,12 +106,13 @@ export function Input({
 }
 
 export function SourceTag({ source }: { source: string }) {
-  const map: Record<string, { tone: "cyan" | "amber" | "green" | "violet" | "neutral"; label: string }> = {
+  const map: Record<string, { tone: "cyan" | "amber" | "green" | "violet" | "neutral" | "red"; label: string }> = {
     CDR: { tone: "cyan", label: "CDR" },
     IPDR: { tone: "violet", label: "IPDR" },
     Banking: { tone: "amber", label: "Banking" },
     Social: { tone: "green", label: "Social" },
     Identity: { tone: "neutral", label: "Identity" },
+    Report: { tone: "red", label: "Report" },
   };
   const m = map[source] ?? { tone: "neutral" as const, label: source };
   return (

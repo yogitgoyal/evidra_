@@ -1,6 +1,8 @@
 "use client";
 
+import { useMemo } from "react";
 import { Card, SectionLabel, Badge } from "@/components/ui/primitives";
+import { TimelineEvent } from "@/lib/types";
 import { Activity } from "lucide-react";
 
 interface DensityBucket {
@@ -10,27 +12,34 @@ interface DensityBucket {
   eventId?: string;
 }
 
-const buckets: DensityBucket[] = [
-  { timeLabel: "09:00", count: 1, hasHighSignal: false, eventId: "tl1" },
-  { timeLabel: "09:30", count: 0, hasHighSignal: false },
-  { timeLabel: "10:00", count: 0, hasHighSignal: false },
-  { timeLabel: "10:30", count: 1, hasHighSignal: false, eventId: "tl2" },
-  { timeLabel: "11:00", count: 0, hasHighSignal: false },
-  { timeLabel: "11:30", count: 1, hasHighSignal: false, eventId: "tl3" },
-  { timeLabel: "12:00", count: 0, hasHighSignal: false },
-  { timeLabel: "12:30", count: 1, hasHighSignal: false, eventId: "tl4" },
-  { timeLabel: "13:00", count: 1, hasHighSignal: false, eventId: "tl5" },
-  { timeLabel: "13:30", count: 4, hasHighSignal: true, eventId: "tl6" },
-  { timeLabel: "14:00", count: 3, hasHighSignal: true, eventId: "tl7" },
-  { timeLabel: "14:30", count: 1, hasHighSignal: false, eventId: "tl8" },
-  { timeLabel: "15:00", count: 0, hasHighSignal: false },
-  { timeLabel: "15:30", count: 2, hasHighSignal: true, eventId: "tl9" },
-  { timeLabel: "16:00", count: 1, hasHighSignal: false, eventId: "tl10" },
-  { timeLabel: "16:30", count: 0, hasHighSignal: false },
-];
-
-export function TimelineSparkline({ onSelectEvent }: { onSelectEvent?: (eventId: string) => void }) {
-  const maxCount = 4;
+export function TimelineSparkline({ timeline, onSelectEvent }: { timeline: TimelineEvent[]; onSelectEvent?: (eventId: string) => void }) {
+  const buckets = useMemo<DensityBucket[]>(() => {
+    if (timeline.length === 0) return [];
+    const timestamps = timeline.map((event) => new Date(event.timestamp).getTime()).filter(Number.isFinite);
+    if (timestamps.length === 0) return [];
+    const minTime = Math.min(...timestamps);
+    const maxTime = Math.max(...timestamps);
+    const bucketCount = Math.min(16, Math.max(1, timeline.length));
+    const bucketSize = Math.max(60 * 60 * 1000, (maxTime - minTime) / bucketCount || 1);
+    const result: DensityBucket[] = Array.from({ length: bucketCount }, (_, index) => ({
+      timeLabel: new Date(minTime + index * bucketSize).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      count: 0,
+      hasHighSignal: false,
+      eventId: undefined,
+    }));
+    timeline.forEach((event) => {
+      const time = new Date(event.timestamp).getTime();
+      if (!Number.isFinite(time)) return;
+      const index = Math.min(bucketCount - 1, Math.max(0, Math.floor((time - minTime) / bucketSize)));
+      result[index].count += 1;
+      result[index].eventId ??= event.id;
+      if (event.severity === "high" || event.severity === "critical" || event.severity === "watch") {
+        result[index].hasHighSignal = true;
+      }
+    });
+    return result;
+  }, [timeline]);
+  const maxCount = Math.max(1, ...buckets.map((bucket) => bucket.count));
 
   return (
     <Card className="p-5">
@@ -39,9 +48,11 @@ export function TimelineSparkline({ onSelectEvent }: { onSelectEvent?: (eventId:
           <Activity size={15} className="text-cyan" />
           <SectionLabel>EVENT DENSITY & ACTIVITY INTENSITY SPARKLINE</SectionLabel>
         </div>
-        <Badge tone="amber" className="font-mono text-[10px]">
-          HIGH CLUSTER: 13:30 – 14:30
-        </Badge>
+        {buckets.some((bucket) => bucket.hasHighSignal) && (
+          <Badge tone="amber" className="font-mono text-[10px]">
+            HIGH-SIGNAL CLUSTERS PRESENT
+          </Badge>
+        )}
       </div>
 
       <div className="flex h-14 w-full items-end gap-1.5 rounded-xl border border-border-soft bg-surface-2 p-2">
@@ -70,11 +81,11 @@ export function TimelineSparkline({ onSelectEvent }: { onSelectEvent?: (eventId:
       </div>
 
       <div className="mt-2 flex justify-between font-mono text-[10px] text-text-faint">
-        <span>09:00</span>
-        <span>11:00</span>
-        <span className="font-semibold text-red">13:30 (Peak Cluster)</span>
-        <span>15:00</span>
-        <span>16:30</span>
+        <span>{buckets[0]?.timeLabel ?? "—"}</span>
+        <span>{buckets[Math.floor(buckets.length / 4)]?.timeLabel ?? "—"}</span>
+        <span className="font-semibold text-red">{buckets[Math.floor(buckets.length / 2)]?.timeLabel ?? "—"}</span>
+        <span>{buckets[Math.floor((buckets.length * 3) / 4)]?.timeLabel ?? "—"}</span>
+        <span>{buckets[buckets.length - 1]?.timeLabel ?? "—"}</span>
       </div>
     </Card>
   );

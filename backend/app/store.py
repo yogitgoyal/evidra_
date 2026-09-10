@@ -11,11 +11,13 @@ import urllib.request
 from fastapi import HTTPException
 from app.models import GraphResponse, TimelineEvent, EvidenceRecord, Entity, GraphEdge
 from app.models.case import Case
-from app.models.datasets import BankingRecord, CdrRecord, EvidenceRecordRow, IpdrRecord, ReportRecord, SocialRecord
+from app.models.datasets import BankingRecord, CdrRecord, EvidenceRecordRow, IdentityRecord, IpdrRecord, ReportRecord, SocialRecord
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import FinancialFlowResponse, FinancialFlowNode, FinancialFlowLink
 from app.models import CopilotMessage, StoryClaim
+
+TIMELINE_MAX_EVENTS = 2000
 
 class DataStore:
     def __init__(self):
@@ -392,22 +394,96 @@ class DataStore:
         eds = list(self.edges) if case_id in case_ids else []
         return GraphResponse(entities=ents, edges=eds)
 
-    async def timeline_for_case(self, case_id: str, db: AsyncSession | None = None) -> list[TimelineEvent]:
+    async def timeline_for_case(
+        self,
+        case_id: str,
+        db: AsyncSession | None = None,
+        limit: int = TIMELINE_MAX_EVENTS,
+        offset: int = 0,
+    ) -> list[TimelineEvent]:
         if db:
-            rows = list(await db.scalars(select(CdrRecord).where(CdrRecord.case_id == case_id))) + list(await db.scalars(select(BankingRecord).where(BankingRecord.case_id == case_id))) + list(await db.scalars(select(SocialRecord).where(SocialRecord.case_id == case_id)))
+            cdr = list(await db.scalars(select(CdrRecord).where(CdrRecord.case_id == case_id)))
+            banking = list(await db.scalars(select(BankingRecord).where(BankingRecord.case_id == case_id)))
+            social = list(await db.scalars(select(SocialRecord).where(SocialRecord.case_id == case_id)))
+            ipdr = list(await db.scalars(select(IpdrRecord).where(IpdrRecord.case_id == case_id)))
+            identity = list(await db.scalars(select(IdentityRecord).where(IdentityRecord.case_id == case_id)))
+            reports = list(await db.scalars(select(ReportRecord).where(ReportRecord.case_id == case_id)))
+            rows = cdr + banking + social + ipdr + identity + reports
             if rows:
-                evidence_ids = await self._ensure_provenance(db, case_id, rows, "timeline_event")
-                calls = [row for row in rows if isinstance(row, CdrRecord)]
+                provenance_rows = cdr + banking + social + ipdr
+                evidence_ids = await self._ensure_provenance(db, case_id, provenance_rows, "timeline_event") if provenance_rows else {}
+                report_evidence = list(await db.scalars(
+                    select(EvidenceRecordRow).where(
+                        EvidenceRecordRow.case_id == case_id,
+                        EvidenceRecordRow.source == "Report",
+                        EvidenceRecordRow.source_record_id.in_([row.id for row in reports]),
+                    )
+                )) if reports else []
+                evidence_ids.update({row.source_record_id: row.id for row in report_evidence})
+                evidence_rules = {
+                    row.source_record_id: row.rule
+                    for row in await db.scalars(
+                        select(EvidenceRecordRow).where(
+                            EvidenceRecordRow.case_id == case_id,
+                            EvidenceRecordRow.source_record_id.in_([row.id for row in provenance_rows + reports]),
+                        )
+                    )
+                } if provenance_rows or reports else {}
+                calls = cdr
                 short_call_ids = {row.id for row in calls if any(other.id != row.id and abs(other.timestamp - row.timestamp) <= timedelta(minutes=30) for other in calls)}
-                return sorted([
-                    TimelineEvent(id=row.id, timestamp=row.timestamp.isoformat(), title="Call record" if isinstance(row, CdrRecord) else "Banking transaction" if isinstance(row, BankingRecord) else "Social link", description=(f"{row.caller} called {row.callee}" if isinstance(row, CdrRecord) else f"{row.sender} transferred {row.amount} to {row.recipient} via {row.channel}" if isinstance(row, BankingRecord) else f"{row.actor} {row.interaction}d {row.target} on {row.platform}"), source="CDR" if isinstance(row, CdrRecord) else "Banking" if isinstance(row, BankingRecord) else "Social", entityIds=[], evidenceId=evidence_ids[row.id], evidenceIds=[evidence_ids[row.id]], severity=("high" if isinstance(row, BankingRecord) and float(row.amount) >= 10000 else "medium" if isinstance(row, CdrRecord) and row.id in short_call_ids else "low" if isinstance(row, SocialRecord) else "info"))
-                    for row in rows
-                ], key=lambda event: event.timestamp)
+                events = []
+                for row in rows:
+                    if isinstance(row, CdrRecord):
+                        title = "Call record"
+                        description = f"{row.caller} called {row.callee} ({row.duration_seconds}s)"
+                        source, event_type, entity_ids = "CDR", "telecom", [row.caller, row.callee]
+                        severity = "medium" if row.id in short_call_ids else "info"
+                    elif isinstance(row, BankingRecord):
+                        title = "Banking transaction"
+                        description = f"{row.sender} transferred {row.amount} to {row.recipient} via {row.channel}"
+                        source, event_type, entity_ids = "Banking", "banking", [row.sender, row.recipient]
+                        severity = "high" if float(row.amount) >= 10000 else "info"
+                    elif isinstance(row, SocialRecord):
+                        title = "Social link"
+                        description = f"{row.actor} had a '{row.interaction}' interaction with {row.target} on {row.platform}"
+                        source, event_type, entity_ids, severity = "Social", "social", [row.actor, row.target], "low"
+                    elif isinstance(row, IpdrRecord):
+                        title = "IP session record"
+                        description = f"{row.source_ip} connected to {row.destination_ip} via {row.protocol}"
+                        source, event_type, entity_ids, severity = "IPDR", "telecom", [row.source_ip, row.destination_ip], "info"
+                    elif isinstance(row, IdentityRecord):
+                        title = "Identity record"
+                        description = f"{row.subject} submitted {row.document_type} (hash {row.document_hash[:16]}...)"
+                        source, event_type, entity_ids, severity = "Identity", None, [row.subject], "info"
+                    else:
+                        excerpt = " ".join(row.raw_text.split())[:100]
+                        filename = f" from {row.original_filename}" if row.original_filename else ""
+                        title = "FIR/Report submitted"
+                        description = f"Report submitted{filename}: {excerpt}"
+                        source, event_type, entity_ids, severity = "Report", None, [str(item.get("value")) for item in row.extracted_entities if item.get("value")], "info"
+                    event_evidence_id = evidence_ids.get(row.id)
+                    events.append(TimelineEvent(
+                        id=row.id,
+                        timestamp=row.timestamp.isoformat(),
+                        title=title,
+                        type=event_type,
+                        description=description,
+                        source=source,
+                        entityIds=entity_ids,
+                        evidenceId=event_evidence_id,
+                        evidenceIds=[event_evidence_id] if event_evidence_id else [],
+                        confidence=None,
+                        ruleTriggered=evidence_rules.get(row.id),
+                        severity=severity,
+                    ))
+                ordered_events = sorted(events, key=lambda event: (event.timestamp, event.id))
+                return ordered_events[offset:offset + min(limit, TIMELINE_MAX_EVENTS)]
         case_ids = {case.id for case in self.cases}
-        return sorted(
+        ordered_events = sorted(
             (t for t in self.timeline if case_id in case_ids),
-            key=lambda event: event.timestamp,
+            key=lambda event: (event.timestamp, event.id),
         )
+        return ordered_events[offset:offset + min(limit, TIMELINE_MAX_EVENTS)]
 
     def evidence_by_id_lookup(self, evidence_id: str) -> EvidenceRecord | None:
         return self.evidence_by_id.get(evidence_id)

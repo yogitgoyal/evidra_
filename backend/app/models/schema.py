@@ -1,5 +1,5 @@
 from typing import Optional, Union, Literal
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # ---------- Shared enums ----------
 EntityType = Literal["person","phone","sim","device","ip","account","upi","tower","location","social","vehicle"]
@@ -22,6 +22,7 @@ class Entity(BaseModel):
     risk: int
     confidence: MatchConfidence
     tags: Optional[list[str]] = None
+    evidenceIds: list[str] = Field(default_factory=list)
 
 class GraphEdge(BaseModel):
     id: str

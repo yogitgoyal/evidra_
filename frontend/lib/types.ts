@@ -21,6 +21,7 @@ export interface Entity {
   risk: number; // 0-100
   confidence: MatchConfidence;
   tags?: string[];
+  evidenceIds?: string[];
 }
 
 export type EdgeKind =
@@ -33,7 +34,8 @@ export type EdgeKind =
   | "MENTIONED"
   | "CO_OCCURRED"
   | "SHARED_DEVICE"
-  | "SHARED_LOCATION";
+  | "SHARED_LOCATION"
+  | "POSSIBLE_SAME_IDENTIFIER";
 
 export interface GraphEdge {
   id: string;

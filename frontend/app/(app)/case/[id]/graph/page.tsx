@@ -5,8 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
-import { getGraph } from "@/lib/api";
-import { Entity, EntityType, GraphEdge } from "@/lib/types";
+import { getEvidence, getGraph } from "@/lib/api";
+import { Entity, EntityType, EvidenceRecord, GraphEdge } from "@/lib/types";
 import { Badge } from "@/components/ui/primitives";
 import { Cite } from "@/components/evidence/Cite";
 import { EntityIcon, entityTypeLabel } from "@/components/case/EntityIcon";
@@ -31,6 +31,7 @@ export default function GraphPage() {
   const caseId = params?.id as string;
   const [entities, setEntities] = useState<Entity[]>([]);
   const [edges, setEdges] = useState<GraphEdge[]>([]);
+  const [evidenceRecords, setEvidenceRecords] = useState<EvidenceRecord[]>([]);
   const [selected, setSelected] = useState<Entity | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -40,11 +41,12 @@ export default function GraphPage() {
   useEffect(() => {
     if (!caseId) return;
     setLoading(true);
-    getGraph(caseId)
-      .then((data) => {
-        setEntities(data.entities);
-        setEdges(data.edges);
-        setActiveTypes(new Set(data.entities.map((e) => e.type)));
+    Promise.all([getGraph(caseId), getEvidence(caseId)])
+      .then(([graph, evidence]) => {
+        setEntities(graph.entities);
+        setEdges(graph.edges);
+        setEvidenceRecords(evidence.evidence);
+        setActiveTypes(new Set(graph.entities.map((e) => e.type)));
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
@@ -54,6 +56,20 @@ export default function GraphPage() {
     () => (selected ? edges.filter((e) => e.source === selected.id || e.target === selected.id) : []),
     [selected]
   );
+
+  const provenanceGroups = useMemo(() => {
+    if (!selected) return [];
+    const recordsById = new Map(evidenceRecords.map((record) => [record.id, record]));
+    const groups = new Map<string, EvidenceRecord[]>();
+    (selected.evidenceIds ?? []).forEach((evidenceId) => {
+      const record = recordsById.get(evidenceId);
+      if (!record) return;
+      const group = groups.get(record.source) ?? [];
+      group.push(record);
+      groups.set(record.source, group);
+    });
+    return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right));
+  }, [selected, evidenceRecords]);
 
   function toggleType(t: EntityType) {
     setActiveTypes((prev) => {
@@ -215,6 +231,32 @@ export default function GraphPage() {
                     ))}
                   </div>
                 )}
+
+                <div>
+                  <div className="mb-2 font-mono text-[10.5px] uppercase tracking-wider text-text-faint">
+                    Sourced from ({selected.evidenceIds?.length ?? 0} records)
+                  </div>
+                  {provenanceGroups.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-border-soft px-3 py-2.5 text-xs text-text-faint">
+                      No source provenance available.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {provenanceGroups.map(([source, records]) => (
+                        <details key={source} className="rounded-xl border border-border-soft bg-surface-2 px-3 py-2.5">
+                          <summary className="cursor-pointer list-none text-xs font-medium text-text">
+                            <span>{source}: {records.length} {records.length === 1 ? "record" : "records"}</span>
+                          </summary>
+                          <div className="mt-2 border-t border-border-soft pt-2">
+                            <Cite ids={records.map((record) => record.id)} chipKey={`entity-${selected.id}-${source}`}>
+                              View {records.length} {records.length === 1 ? "record" : "records"}
+                            </Cite>
+                          </div>
+                        </details>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
                 <div>
                   <div className="mb-2 font-mono text-[10.5px] uppercase tracking-wider text-text-faint">

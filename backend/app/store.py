@@ -3,6 +3,7 @@ import asyncio
 from collections import defaultdict
 from itertools import combinations
 import ipaddress
+from difflib import SequenceMatcher
 from app.seed import cases, active_case, entities, edges, evidence, evidence_by_id, timeline, story_claims, copilot_seed, alerts, weekly_activity
 from datetime import timedelta
 import hashlib
@@ -47,6 +48,23 @@ def normalize_entity_value(entity_type: str, value: str) -> str:
     if entity_type in {"account", "upi"}:
         return normalize_account(value)
     return re.sub(r"\s+", " ", value.strip()).casefold()
+
+
+def normalize_alias(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", value.casefold())
+
+
+def near_exact_alias_match(person_label: str, social_label: str) -> bool:
+    person_alias = normalize_alias(person_label)
+    social_alias = normalize_alias(social_label)
+    if not person_alias or not social_alias:
+        return False
+    shared_tokens = {
+        token
+        for token in re.findall(r"[a-z0-9]+", person_label.casefold())
+        if len(token) >= 4 and token in social_label.casefold()
+    }
+    return bool(shared_tokens) and SequenceMatcher(None, person_alias, social_alias).ratio() >= 0.92
 
 
 def entity_id(entity_type: str, value: str) -> tuple[str, str]:
@@ -400,6 +418,9 @@ class DataStore:
                 shared_ips = {ip for ip, identities_for_ip in ip_identities.items() if len(identities_for_ip) > 1}
                 social_links = {(item.actor, item.target) for item in social}
                 entity_keys: dict[str, tuple[str, str]] = {}
+                entity_evidence_ids: dict[str, set[str]] = defaultdict(set)
+                entity_identifiers: dict[str, set[tuple[str, str]]] = defaultdict(set)
+                identifier_evidence_ids: dict[tuple[str, tuple[str, str]], set[str]] = defaultdict(set)
 
                 def add_entity(entity_type, label):
                     canonical_id, normalized_value = entity_id(entity_type, label)
@@ -410,26 +431,64 @@ class DataStore:
                 for row in cdr:
                     caller_id = add_entity("phone", row.caller)
                     callee_id = add_entity("phone", row.callee)
+                    cdr_evidence_id = evidence_ids[row.id]
+                    entity_evidence_ids[caller_id].add(cdr_evidence_id)
+                    entity_evidence_ids[callee_id].add(cdr_evidence_id)
                     edges.append(GraphEdge(id=row.id, source=caller_id, target=callee_id, kind="CALLED", confidence="high", weight=3 if row.attributes.get("identity_id") in shared_identities else 1, evidenceId=evidence_ids[row.id], evidenceIds=[evidence_ids[row.id]]))
                 for row in ipdr:
                     source_id = add_entity("ip", row.source_ip)
                     destination_id = add_entity("ip", row.destination_ip)
+                    ipdr_evidence_id = evidence_ids[row.id]
+                    entity_evidence_ids[source_id].add(ipdr_evidence_id)
+                    entity_evidence_ids[destination_id].add(ipdr_evidence_id)
                     edges.append(GraphEdge(id=row.id, source=source_id, target=destination_id, kind="MESSAGED", confidence="high", weight=3 if row.source_ip in shared_ips or row.destination_ip in shared_ips else 1, evidenceId=evidence_ids[row.id], evidenceIds=[evidence_ids[row.id]]))
                 for row in banking:
                     sender_id = add_entity("account", row.sender)
                     recipient_id = add_entity("account", row.recipient)
+                    banking_evidence_id = evidence_ids[row.id]
+                    entity_evidence_ids[sender_id].add(banking_evidence_id)
+                    entity_evidence_ids[recipient_id].add(banking_evidence_id)
                     edges.append(GraphEdge(id=row.id, source=sender_id, target=recipient_id, kind="TRANSFERRED_TO", confidence="high", weight=1, evidenceId=evidence_ids[row.id], evidenceIds=[evidence_ids[row.id]]))
                 for row in social:
                     actor_id = add_entity("social", row.actor)
                     target_id = add_entity("social", row.target)
+                    evidence_id = evidence_ids[row.id]
+                    entity_evidence_ids[actor_id].add(evidence_id)
+                    entity_evidence_ids[target_id].add(evidence_id)
+                    attributes = row.attributes or {}
+                    for entity_id_value, prefix in ((actor_id, "actor"), (target_id, "target")):
+                        for key in ("phone", "account", "upi"):
+                            values = attributes.get(f"{prefix}_{key}", [])
+                            if isinstance(values, str):
+                                values = [values]
+                            for value in values or []:
+                                identifier = (key, normalize_entity_value(key, value))
+                                entity_identifiers[entity_id_value].add(identifier)
+                                identifier_evidence_ids[(entity_id_value, identifier)].add(evidence_id)
                     edges.append(GraphEdge(id=row.id, source=actor_id, target=target_id, kind="MENTIONED", confidence="high", weight=3 if (row.target, row.actor) in social_links else 1, evidenceId=evidence_ids[row.id], evidenceIds=[evidence_ids[row.id]]))
                 for report in reports:
+                    report_evidence_id = self._evidence_id(report.id)
+                    report_person_ids = []
+                    report_identifiers = set()
                     for extracted in report.extracted_entities:
                         entity_type = extracted.get("type")
                         value = extracted.get("value")
-                        if entity_type not in {"person", "phone", "ip", "location", "vehicle"} or not value:
+                        if entity_type not in {"person", "phone", "account", "upi", "ip", "location", "vehicle"} or not value:
                             continue
-                        add_entity(entity_type, value)
+                        extracted_id = add_entity(entity_type, value)
+                        entity_evidence_ids[extracted_id].add(report_evidence_id)
+                        if entity_type == "person":
+                            report_person_ids.append(extracted_id)
+                        if entity_type in {"phone", "account", "upi"}:
+                            report_identifiers.add((entity_type, normalize_entity_value(entity_type, value)))
+                    for person_id in report_person_ids:
+                        entity_identifiers[person_id].update(report_identifiers)
+                        for identifier in report_identifiers:
+                            identifier_evidence_ids[(person_id, identifier)].add(report_evidence_id)
+                    normalized_report_text = normalize_alias(report.raw_text)
+                    for graph_entity_id, (_, normalized_value) in entity_keys.items():
+                        if graph_entity_id.startswith("social:") and normalize_alias(normalized_value) in normalized_report_text:
+                            entity_evidence_ids[graph_entity_id].add(report_evidence_id)
                 possible_matches: dict[str, list[str]] = defaultdict(list)
                 for graph_entity_id, (_, normalized_value) in entity_keys.items():
                     possible_matches[normalized_value].append(graph_entity_id)
@@ -453,6 +512,38 @@ class DataStore:
                             weight=1,
                             evidenceIds=[],
                         ))
+                for person_id, person_entity in entities.items():
+                    if person_entity.type != "person":
+                        continue
+                    for social_id, social_entity in entities.items():
+                        if social_entity.type != "social":
+                            continue
+                        shared_identifiers = entity_identifiers[person_id] & entity_identifiers[social_id]
+                        contextual_evidence = entity_evidence_ids[person_id] & entity_evidence_ids[social_id]
+                        if not shared_identifiers and not (
+                            near_exact_alias_match(person_entity.label, social_entity.label)
+                            and contextual_evidence
+                        ):
+                            continue
+                        edge_key = (person_id, social_id)
+                        if edge_key in existing_possible_edges:
+                            continue
+                        existing_possible_edges.add(edge_key)
+                        supporting_evidence = set(contextual_evidence)
+                        for identifier in shared_identifiers:
+                            supporting_evidence.update(identifier_evidence_ids[(person_id, identifier)])
+                            supporting_evidence.update(identifier_evidence_ids[(social_id, identifier)])
+                        edges.append(GraphEdge(
+                            id=f"possible_same_identity:{person_id}:{social_id}",
+                            source=person_id,
+                            target=social_id,
+                            kind="POSSIBLE_SAME_IDENTIFIER",
+                            confidence="ambiguous",
+                            weight=1,
+                            evidenceIds=sorted(supporting_evidence),
+                        ))
+                for graph_entity_id, entity in entities.items():
+                    entity.evidenceIds = sorted(entity_evidence_ids[graph_entity_id])
                 return GraphResponse(entities=list(entities.values()), edges=edges, fraudMetrics=await self.fraud_analysis(case_id, db))
         case_ids = {case.id for case in self.cases}
         ents = list(self.entities) if case_id in case_ids else []

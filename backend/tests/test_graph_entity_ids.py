@@ -119,8 +119,84 @@ async def test_graph_uses_typed_ids_and_possible_same_identifier_edges(graph_ses
 
     phone_report_ids = [entity.id for entity in graph.entities if entity.id == "phone:9876543210"]
     assert len(phone_report_ids) == 1
+    phone_entity = next(entity for entity in graph.entities if entity.id == "phone:9876543210")
+    assert "ev_cdr_cross_linked" in phone_entity.evidenceIds
+    assert "ev_report_cross_linked" in phone_entity.evidenceIds
     assert not any(
         edge.kind == "POSSIBLE_SAME_IDENTIFIER"
         and {edge.source, edge.target} == {"phone:9876543210", "phone:9876543210"}
+        for edge in graph.edges
+    )
+
+
+@pytest.mark.asyncio
+async def test_person_social_edges_require_context_and_conservative_similarity(graph_session):
+    case_id = "person_social_context_test"
+    timestamp = datetime(2026, 8, 1, 9, tzinfo=timezone.utc)
+    graph_session.add_all([
+        Case(id=case_id, name="Person social context test", status="active", priority="medium", lead="Test", tags=[]),
+        SocialRecord(
+            id="social_person_context",
+            case_id=case_id,
+            actor="priya.nair",
+            target="unknown.handle1",
+            platform="Instagram",
+            interaction="message",
+            timestamp=timestamp,
+            attributes={},
+        ),
+        SocialRecord(
+            id="social_person_conservative",
+            case_id=case_id,
+            actor="rajesh.verma",
+            target="unknown.handle1",
+            platform="Instagram",
+            interaction="message",
+            timestamp=timestamp,
+            attributes={},
+        ),
+        ReportRecord(
+            id="report_person_context",
+            case_id=case_id,
+            raw_text="Priya Nair was identified beside priya.nair.",
+            submitted_by="test",
+            submitted_at=timestamp,
+            extracted_entities=[{
+                "type": "person",
+                "value": "Priya Nair",
+                "confidence": "ambiguous",
+                "offset": 0,
+            }],
+            timestamp=timestamp,
+            attributes={},
+        ),
+        ReportRecord(
+            id="report_person_conservative",
+            case_id=case_id,
+            raw_text="Rajesh Kumar Verma was mentioned beside rajesh.verma.",
+            submitted_by="test",
+            submitted_at=timestamp,
+            extracted_entities=[{
+                "type": "person",
+                "value": "Rajesh Kumar Verma",
+                "confidence": "ambiguous",
+                "offset": 0,
+            }],
+            timestamp=timestamp,
+            attributes={},
+        ),
+    ])
+    await graph_session.commit()
+
+    graph = await store.graph_for_case(case_id, graph_session)
+    matching_edge = next(
+        edge for edge in graph.edges
+        if {edge.source, edge.target} == {"person:priya nair", "social:priya.nair"}
+    )
+    assert matching_edge.kind == "POSSIBLE_SAME_IDENTIFIER"
+    assert matching_edge.confidence == "ambiguous"
+    assert matching_edge.evidenceIds == ["ev_report_person_context"]
+    assert not any(
+        {edge.source, edge.target} == {"person:rajesh kumar verma", "social:rajesh.verma"}
         for edge in graph.edges
     )

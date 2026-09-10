@@ -121,6 +121,19 @@ export function InvestigationGraph({
     return edges.filter((e) => ids.has(e.source) && ids.has(e.target));
   }, [activeEntities]);
 
+  const denseNodeIds = useMemo(() => {
+    const degrees = new Map<string, number>();
+    activeEdges.forEach((edge) => {
+      degrees.set(edge.source, (degrees.get(edge.source) ?? 0) + 1);
+      degrees.set(edge.target, (degrees.get(edge.target) ?? 0) + 1);
+    });
+    return new Set(
+      [...degrees.entries()]
+        .filter(([, degree]) => degree >= 4)
+        .map(([nodeId]) => nodeId),
+    );
+  }, [activeEdges]);
+
   // Convert case data to Cytoscape elements with hex colors
   const elements = useMemo(() => {
     const nodes = activeEntities.map((e) => {
@@ -149,13 +162,15 @@ export function InvestigationGraph({
         source: e.source,
         target: e.target,
         kind: e.kind,
+        edgeLabel: e.kind === "POSSIBLE_SAME_IDENTIFIER" ? "Possible Same Identity" : e.kind,
+        labelVisible: !denseNodeIds.has(e.source) && !denseNodeIds.has(e.target),
         confidence: e.confidence,
         weight: e.weight,
       },
     }));
 
     return [...nodes, ...links];
-  }, [activeEntities, activeEdges]);
+  }, [activeEntities, activeEdges, denseNodeIds]);
   const elementsRef = useRef(elements);
 
   useEffect(() => {
@@ -247,7 +262,8 @@ export function InvestigationGraph({
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             "line-style": (e: any) => (e.data("confidence") === "ambiguous" ? "dashed" : "solid"),
             "curve-style": "bezier",
-            label: "data(kind)",
+            label: (edge: EdgeSingular) =>
+              edge.data("labelVisible") ? edge.data("edgeLabel") : "",
             "font-size": 8.5,
             "font-family": "JetBrains Mono, monospace",
             "font-weight": "bold",
@@ -295,6 +311,7 @@ export function InvestigationGraph({
         } else {
           edge.style({ "line-color": "#22c55e", width: 3.5, opacity: 1.0 });
         }
+        edge.style("label", edge.data("edgeLabel"));
       });
     };
 
@@ -306,6 +323,7 @@ export function InvestigationGraph({
           "line-color": "#334155",
           width: edge.data("confidence") === "ambiguous" ? 1.5 : 2.5,
         });
+        edge.style("label", edge.data("labelVisible") ? edge.data("edgeLabel") : "");
       });
     };
 
@@ -324,6 +342,17 @@ export function InvestigationGraph({
       const entity = entities.find((e) => e.id === node.id()) ?? null;
       setHoveredNode(entity);
       highlightNeighborhood(node);
+    });
+
+    cy.on("mouseover", "edge", (evt) => {
+      if (destroyedRef.current || cy.destroyed()) return;
+      evt.target.style("label", evt.target.data("edgeLabel"));
+    });
+
+    cy.on("mouseout", "edge", (evt) => {
+      if (destroyedRef.current || cy.destroyed()) return;
+      const edge = evt.target;
+      edge.style("label", edge.data("labelVisible") ? edge.data("edgeLabel") : "");
     });
 
     cy.on("mouseout", "node", () => {

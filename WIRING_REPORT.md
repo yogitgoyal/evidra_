@@ -221,3 +221,23 @@ POST /copilot/query transfer => 200, claims=10
 ```
 
 The demo flow therefore passed end to end on the fresh migrated database.
+
+## Investigation graph follow-up: report co-occurrence modeling
+
+Observed in case `19cb5ebe-e838-4b97-96b0-8fe929f11b3a`: report-extracted
+entities (person, vehicle, IP, etc.) currently create graph nodes but no
+relationship edges to other entities mentioned in the same report.
+
+This is a separate modeling decision, not part of the graph dedup/layout fix:
+determine what confidence level report co-occurrence edges should receive.
+They will likely be lower confidence than observed CDR/Banking edges, similar
+to or below the ambiguous person-social derived edges.
+
+## Known trade-offs
+
+- Layout runs synchronously; graphs above ~250 nodes may visibly block the UI
+  for several seconds. No verified production max-node count exists yet —
+  revisit with Web Worker or async layout if real cases approach this scale.
+- Seed is derived from visible entity IDs; layout reshuffles fully on filter
+  change, node add/remove, or edge change. Stability holds only for an
+  unchanged visible graph.

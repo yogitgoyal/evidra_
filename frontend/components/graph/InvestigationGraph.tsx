@@ -17,6 +17,29 @@ if (typeof cytoscape !== "undefined" && typeof fcose !== "undefined") {
   }
 }
 
+function graphSeed(entityIds: string[]): number {
+  return entityIds.sort().reduce((seed, id) => {
+    for (let index = 0; index < id.length; index += 1) {
+      seed = Math.imul(seed ^ id.charCodeAt(index), 16777619);
+    }
+    return seed >>> 0;
+  }, 2166136261);
+}
+
+function runWithSeed<T>(seed: number, callback: () => T): T {
+  const originalRandom = Math.random;
+  let state = seed || 1;
+  Math.random = () => {
+    state = (Math.imul(1664525, state) + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+  try {
+    return callback();
+  } finally {
+    Math.random = originalRandom;
+  }
+}
+
 export const entityColorMap2D: Record<
   EntityType,
   { base: string; highlight: string; dark: string; label: string }
@@ -133,6 +156,11 @@ export function InvestigationGraph({
         .map(([nodeId]) => nodeId),
     );
   }, [activeEdges]);
+  const layoutSeed = useMemo(
+    () => graphSeed(activeEntities.map((entity) => entity.id)),
+    [activeEntities],
+  );
+  const layoutIterations = activeEntities.length > 150 ? 2500 : 5000;
 
   // Convert case data to Cytoscape elements with hex colors
   const elements = useMemo(() => {
@@ -185,10 +213,11 @@ export function InvestigationGraph({
 
     setIsLayoutRunning(true);
 
+    // Layout runs synchronously; graphs above ~250 nodes may visibly block the UI for several seconds. No verified production max-node count exists yet — revisit with Web Worker or async layout if real cases approach this scale.
+    // Seed is derived from visible entity IDs; layout reshuffles fully on filter change, node add/remove, or edge change. Stability holds only for an unchanged visible graph.
     const layout = cyRef.current.layout({
       name: "fcose",
-      animate: true,
-      animationDuration: 1200,
+      animate: false,
       fit: true,
       padding: 60,
       nodeDimensionsIncludeLabels: true,
@@ -205,7 +234,9 @@ export function InvestigationGraph({
         return 60 + risk / 3;
       },
       packComponents: true,
-      randomize: false,
+      quality: "proof",
+      numIter: layoutIterations,
+      randomize: true,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
 
@@ -217,8 +248,8 @@ export function InvestigationGraph({
       }
     });
 
-    layout.run();
-  }, []);
+    runWithSeed(layoutSeed, () => layout.run());
+  }, [layoutIterations, layoutSeed]);
 
   // Initialize Cytoscape core instance
   useEffect(() => {
@@ -376,8 +407,7 @@ export function InvestigationGraph({
     setIsLayoutRunning(true);
     const layout = cy.layout({
       name: "fcose",
-      animate: true,
-      animationDuration: 1200,
+      animate: false,
       fit: true,
       padding: 60,
       nodeDimensionsIncludeLabels: true,
@@ -394,7 +424,9 @@ export function InvestigationGraph({
         return 60 + risk / 3;
       },
       packComponents: true,
-      randomize: false,
+      quality: "proof",
+      numIter: layoutIterations,
+      randomize: true,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
 
@@ -404,7 +436,7 @@ export function InvestigationGraph({
       cy.fit(undefined, 60);
     });
 
-    layout.run();
+    runWithSeed(layoutSeed, () => layout.run());
 
     return () => {
       destroyedRef.current = true;

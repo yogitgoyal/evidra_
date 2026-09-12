@@ -383,15 +383,42 @@ class DataStore:
         validated["caseId"] = case_id
         validated["prompt"] = "Only narrate given evidence, cite evidence_id per sentence."
         validated["provider"] = provider
+        provenance_ids = {
+            evidence_id
+            for claim in validated["claims"]
+            for evidence_id in claim["evidenceIds"]
+        }
+        provenance_rows = list(await db.scalars(
+            select(EvidenceRecordRow).where(EvidenceRecordRow.id.in_(provenance_ids))
+        )) if provenance_ids else []
+        provenance_by_id = {row.id: row for row in provenance_rows}
         for claim in validated["claims"]:
             if claim["evidenceIds"]:
                 claim["id"] = claim["evidenceIds"][0]
                 claim["evidenceId"] = claim["evidenceIds"][0]
             claim["confidence"] = "high"
-            claim["provenance"] = [
-                await self.provenance_for_claim(evidence_id, db)
-                for evidence_id in claim["evidenceIds"]
-            ]
+            claim["provenance"] = []
+            for evidence_id in claim["evidenceIds"]:
+                record = provenance_by_id.get(evidence_id)
+                chains = []
+                if record:
+                    chains.append({
+                        "evidenceId": record.id,
+                        "sourceDataset": record.source,
+                        "sourceRecordId": record.source_record_id,
+                        "sourceRow": record.fields,
+                        "ruleApplied": record.rule,
+                        "transformation": record.transformation,
+                        "hash": record.content_hash,
+                        "verified": bool(record.content_hash),
+                    })
+                claim["provenance"].append({
+                    "claimId": evidence_id,
+                    "claim": None,
+                    "valid": bool(chains),
+                    "evidenceIds": [item["evidenceId"] for item in chains],
+                    "derivationChain": chains,
+                })
         return validated
 
     async def graph_for_case(self, case_id: str, db: AsyncSession | None = None) -> GraphResponse:

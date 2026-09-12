@@ -3,7 +3,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getCase, deleteCase, CaseApiResponse, getGraph, getTimeline, getStory, getRiskFactors, RiskFactor } from "@/lib/api";
+import { getCase, deleteCase, CaseApiResponse, getGraph, getTimeline, getStory, getRiskFactors, getEvidence, RiskFactor } from "@/lib/api";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import type { Entity, StoryClaim, TimelineEvent } from "@/lib/types";
@@ -43,6 +43,7 @@ export default function CaseOverviewPage() {
   const [caseEdges, setCaseEdges] = useState<import("@/lib/types").GraphEdge[]>([]);
   const [caseTimeline, setCaseTimeline] = useState<TimelineEvent[]>([]);
   const [caseClaims, setCaseClaims] = useState<StoryClaim[]>([]);
+  const [evidenceCount, setEvidenceCount] = useState(0);
   const [riskFactors, setRiskFactors] = useState<RiskFactor[]>([]);
   const [riskFactorsLoading, setRiskFactorsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -51,14 +52,15 @@ export default function CaseOverviewPage() {
     if (!caseId) return;
     setError("");
     setRiskFactorsLoading(true);
-    Promise.all([getCase(caseId), getGraph(caseId), getTimeline(caseId), getStory(caseId), getRiskFactors(caseId)])
-      .then(([nextCase, graph, nextTimeline, story, nextRiskFactors]) => {
+    Promise.all([getCase(caseId), getGraph(caseId), getTimeline(caseId), getStory(caseId), getRiskFactors(caseId), getEvidence(caseId)])
+      .then(([nextCase, graph, nextTimeline, story, nextRiskFactors, evidence]) => {
         setRealCase(nextCase);
         setCaseEntities(graph.entities);
         setCaseEdges(graph.edges);
         setCaseTimeline(nextTimeline);
         setCaseClaims(story.claims);
         setRiskFactors(nextRiskFactors.riskFactors);
+        setEvidenceCount(evidence.evidence.length);
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setRiskFactorsLoading(false));
@@ -123,7 +125,7 @@ export default function CaseOverviewPage() {
 
       {/* Quick Navigation Cards */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {getQuickLinks(caseEntities.length, caseEdges.length, caseTimeline.length, realCase?.alerts ?? 0).map((q, i) => (
+        {getQuickLinks(caseEntities.length, caseEdges.length, caseTimeline.length, evidenceCount).map((q, i) => (
           <motion.div
             key={q.href}
             initial={{ opacity: 0, y: 10 }}

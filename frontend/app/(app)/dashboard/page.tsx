@@ -5,12 +5,13 @@ import Link from "next/link";
 import { getDashboard, listCases, CaseApiResponse } from "@/lib/api";
 import { Card, SectionLabel } from "@/components/ui/primitives";
 import { StartInvestigation } from "@/components/dashboard/StartInvestigation";
-import { Search } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 
 export default function DashboardPage() {
   const [dashboard, setDashboard] = useState<Record<string, unknown> | null>(null);
   const [cases, setCases] = useState<CaseApiResponse[]>([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
@@ -21,7 +22,8 @@ export default function DashboardPage() {
         setDashboard(summary);
         setCases(nextCases);
       })
-      .catch((err: Error) => setError(err.message));
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
   }, []);
 
   const summary = (dashboard?.summary ?? {}) as Record<string, number>;
@@ -58,12 +60,19 @@ export default function DashboardPage() {
     <div className="mx-auto max-w-7xl space-y-6 px-6 py-8 lg:px-8">
       <div><h1 className="text-2xl font-semibold text-text">Command Center</h1><p className="mt-1 text-sm text-text-dim">Live investigations from the backend database.</p></div>
       {error && <div role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {["caseCount", "openAlerts", "entitiesTracked", "evidenceCount"].map((key) => (
-          <Card key={key} className="p-5"><div className="font-mono text-2xl font-bold text-text">{summary[key] ?? "—"}</div><div className="mt-1 text-xs capitalize text-text-dim">{key.replace(/([A-Z])/g, " $1")}</div></Card>
-        ))}
-      </div>
-      <Card className="p-6">
+      {loading ? (
+        <Card className="flex items-center justify-center gap-2 p-10 text-sm text-text-dim">
+          <Loader2 size={16} className="animate-spin" />
+          Loading Command Center…
+        </Card>
+      ) : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {["caseCount", "openAlerts", "entitiesTracked", "evidenceCount"].map((key) => (
+              <Card key={key} className="p-5"><div className="font-mono text-2xl font-bold text-text">{summary[key] ?? "—"}</div><div className="mt-1 text-xs capitalize text-text-dim">{key.replace(/([A-Z])/g, " $1")}</div></Card>
+            ))}
+          </div>
+          <Card className="p-6">
         <div className="mb-4 flex flex-col gap-3 border-b border-border-soft pb-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center justify-between gap-4">
             <SectionLabel>CASES</SectionLabel>
@@ -117,8 +126,10 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
-      </Card>
-      <StartInvestigation />
+          </Card>
+          <StartInvestigation />
+        </>
+      )}
     </div>
   );
 }

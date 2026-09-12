@@ -15,8 +15,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [ssoLoading, setSsoLoading] = useState(false);
   const [step] = useState<"credentials" | "mfa">("credentials");
-  const [username, setUsername] = useState("analyst.bhandari");
-  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("demo");
+  const [password, setPassword] = useState("evidra-demo");
   const [error, setError] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
@@ -132,6 +132,11 @@ export default function LoginPage() {
             </Button>
             {error && <p role="alert" className="text-sm text-red">{error}</p>}
           </form>
+
+          <p className="mt-4 text-center text-xs text-text-faint">
+            Demo login: <span className="font-mono text-text-dim">demo</span> /{" "}
+            <span className="font-mono text-text-dim">evidra-demo</span>
+          </p>
 
           <div className="mt-6 flex items-center gap-3 text-[11px] text-text-faint">
             <div className="h-px flex-1 bg-border-soft" />

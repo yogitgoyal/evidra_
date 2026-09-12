@@ -52,6 +52,28 @@ def _register_unicode_font() -> str:
 FONT_NAME = _register_unicode_font()
 
 
+def _label_value_table(rows: list[tuple[str, Any]], body: ParagraphStyle) -> Table:
+    table = Table(
+        [
+            [Paragraph(_plain(label), body), Paragraph(_plain(value), body)]
+            for label, value in rows
+        ],
+        colWidths=[1.5 * inch, 5.1 * inch],
+    )
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eef3f7")),
+        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#9aa8b5")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#c5cdd4")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    return table
+
+
 def _plain(value: Any) -> str:
     if value is None:
         return ""
@@ -109,6 +131,14 @@ async def build_report(store, case_id: str, db: AsyncSession) -> dict[str, Any]:
     overview = await store.overview_for_case(case_id, db)
     graph = graph_model.model_dump()
     timeline = [event.model_dump() for event in timeline_models]
+    fraud_metrics = graph.get("fraudMetrics") or {
+        "suspiciousEntitiesCount": 0,
+        "flaggedTransactionsCount": 0,
+        "anomalyEventsCount": 0,
+        "sharedIdentityPhoneGroups": 0,
+        "sharedIpGroups": 0,
+        "closedSocialLoops": 0,
+    }
     report = {
         "metadata": {
             "caseId": case_id,
@@ -120,7 +150,7 @@ async def build_report(store, case_id: str, db: AsyncSession) -> dict[str, Any]:
         "graph": {
             "entityCount": len(graph["entities"]),
             "edgeCount": len(graph["edges"]),
-            "fraudMetrics": graph.get("fraudMetrics", {}),
+            "fraudMetrics": fraud_metrics,
             "entities": graph["entities"],
             "edges": graph["edges"],
         },
@@ -154,15 +184,35 @@ def _write_pdf(report: dict[str, Any]) -> None:
     title_style = ParagraphStyle("UnicodeTitle", parent=styles["Title"], fontName=FONT_NAME)
     body = ParagraphStyle("Body", parent=styles["BodyText"], fontName=FONT_NAME, fontSize=9, leading=12, alignment=TA_LEFT)
     heading = ParagraphStyle("Heading", parent=styles["Heading2"], fontName=FONT_NAME, spaceBefore=10, spaceAfter=6)
+    graph_section = report.get("graph", {}) or {}
+    fraud_metrics = graph_section.get("fraudMetrics") or {
+        "suspiciousEntitiesCount": 0,
+        "flaggedTransactionsCount": 0,
+        "anomalyEventsCount": 0,
+    }
+
     story = [
         Paragraph(f"EVIDRA Investigation Report - Case #{_plain(report['metadata']['caseId'])}", title_style),
         Paragraph(f"Generated: {_plain(report['metadata']['generatedAt'])}", body),
         Paragraph("Case Overview", heading),
-        Paragraph(_plain(report["case"]), body),
+        _label_value_table(
+            [
+                ("Case ID", report["metadata"]["caseId"]),
+                ("Suspects", report["case"]["suspects"]),
+                ("Evidence Count", report["case"]["evidenceCount"]),
+                ("Anomalies", report["case"]["anomalies"]),
+            ],
+            body,
+        ),
         Paragraph("Graph Summary", heading),
-        Paragraph(
-            f"Entities: {report['graph']['entityCount']} | Edges: {report['graph']['edgeCount']} | "
-            f"Fraud metrics: {_plain(report['graph']['fraudMetrics'])}",
+        _label_value_table(
+            [
+                ("Entities", report["graph"]["entityCount"]),
+                ("Edges", report["graph"]["edgeCount"]),
+                ("Suspicious Entities", fraud_metrics.get("suspiciousEntitiesCount", 0)),
+                ("Flagged Transactions", fraud_metrics.get("flaggedTransactionsCount", 0)),
+                ("Anomaly Events", fraud_metrics.get("anomalyEventsCount", 0)),
+            ],
             body,
         ),
         GraphSnapshot(report["graph"]),
@@ -188,7 +238,17 @@ def _write_pdf(report: dict[str, Any]) -> None:
     story.append(Paragraph(f"Report provenance verified: {_plain(report['provenanceVerified'])}", body))
     story.append(Paragraph(f"Evidence count: {_plain(report['dashboard']['evidenceCount'])}", body))
     story.append(Paragraph("Dashboard Metrics and Alerts", heading))
-    story.append(Paragraph(_plain(report["dashboard"]["summary"]), body))
+    story.append(_label_value_table(
+        [
+            ("Active Cases", report["dashboard"]["summary"].get("activeCases", 0)),
+            ("Open Alerts", report["dashboard"]["summary"].get("openAlerts", 0)),
+            ("Entities Tracked", report["dashboard"]["summary"].get("entitiesTracked", 0)),
+            ("Evidence Count", report["dashboard"]["evidenceCount"]),
+            ("Provenance Verified", report["dashboard"]["provenanceVerified"]),
+            ("Story Mode Verified", report["dashboard"]["storyModeVerified"]),
+        ],
+        body,
+    ))
     for alert in report["dashboard"]["alerts"]:
         story.append(Paragraph(
             f"Alert: {_plain(alert.get('title'))} | severity: {_plain(alert.get('severity'))} | "
@@ -199,7 +259,8 @@ def _write_pdf(report: dict[str, Any]) -> None:
     story.append(Paragraph("Narrative Claims and Evidence", heading))
     for claim in report["story"]["claims"]:
         story.append(Paragraph(
-            f"{_plain(claim['text'])} | evidence: {_plain(', '.join(claim['evidenceIds']))} | valid: {_plain(claim['valid'])}",
+            f"Rule: {_plain(claim.get('rule'))} | confidence: {_plain(claim.get('confidence'))} | "
+            f"evidence: {_plain(', '.join(claim['evidenceIds']))} | valid: {_plain(claim['valid'])}",
             body,
         ))
         story.append(Spacer(1, 4))

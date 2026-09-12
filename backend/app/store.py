@@ -110,8 +110,12 @@ class DataStore:
                 source, fields, rule = "Banking", {"sender": row.sender, "recipient": row.recipient, "amount": float(row.amount), "channel": row.channel}, "HIGH_VALUE_TRANSACTION" if float(row.amount) >= 10000 else "BANKING_TRANSACTION"
             elif isinstance(row, IdentityRecord):
                 source, fields, rule = "Identity", {"subject": row.subject, "documentType": row.document_type, "documentHash": row.document_hash}, "IDENTITY_RECORD"
-            else:
+            elif isinstance(row, ReportRecord):
+                source, fields, rule = "Report", {"rawText": row.raw_text, "extractedEntities": row.extracted_entities or []}, "REPORT_RECORD"
+            elif isinstance(row, SocialRecord):
                 source, fields, rule = "Social", {"actor": row.actor, "target": row.target, "platform": row.platform, "interaction": row.interaction}, "CLOSED_SOCIAL_LOOP"
+            else:
+                raise TypeError(f"Unsupported provenance record type: {type(row).__name__}")
             canonical = json.dumps({"source": source, "recordId": row.id, "fields": fields, "rule": rule}, sort_keys=True)
             db.add(EvidenceRecordRow(id=evidence_id, case_id=case_id, source=source, source_record_id=row.id, rule=rule, transformation=transformation, content_hash=hashlib.sha256(canonical.encode()).hexdigest(), fields=fields, timestamp=row.timestamp))
         if len(existing) != len(ids) or changed:
@@ -285,7 +289,7 @@ class DataStore:
 
     @staticmethod
     def _validate_narrative(narrative: str, valid_ids: set[str]) -> dict:
-        sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", narrative.strip()) if part.strip()]
+        sentences = [part.strip() for part in re.split(r"(?<![A-Z\.])(?<=[.!?])\s+", narrative.strip()) if part.strip()]
         citation_pattern = re.compile(r"\[([A-Za-z0-9_.-]+)\]")
         uncited = []
         claims = []
@@ -349,7 +353,9 @@ class DataStore:
         ipdr = list(await db.scalars(select(IpdrRecord).where(IpdrRecord.case_id == case_id)))
         banking = list(await db.scalars(select(BankingRecord).where(BankingRecord.case_id == case_id)))
         social = list(await db.scalars(select(SocialRecord).where(SocialRecord.case_id == case_id)))
-        rows = cdr + ipdr + banking + social
+        identity = list(await db.scalars(select(IdentityRecord).where(IdentityRecord.case_id == case_id)))
+        reports = list(await db.scalars(select(ReportRecord).where(ReportRecord.case_id == case_id)))
+        rows = cdr + ipdr + banking + social + identity + reports
         evidence_ids = await self._ensure_provenance(db, case_id, rows, "story_narrative")
         valid_ids = set(evidence_ids.values())
         bundle = []
@@ -357,13 +363,28 @@ class DataStore:
             evidence_id = evidence_ids[row.id]
             if isinstance(row, CdrRecord):
                 fields = {"caller": row.caller, "callee": row.callee, "durationSeconds": row.duration_seconds}
+                record_type = "cdr"
             elif isinstance(row, IpdrRecord):
                 fields = {"sourceIp": row.source_ip, "destinationIp": row.destination_ip, "protocol": row.protocol}
+                record_type = "ipdr"
             elif isinstance(row, BankingRecord):
                 fields = {"sender": row.sender, "recipient": row.recipient, "amount": float(row.amount), "channel": row.channel}
-            else:
+                record_type = "banking"
+            elif isinstance(row, IdentityRecord):
+                fields = {"subject": row.subject, "documentType": row.document_type, "documentHash": row.document_hash}
+                record_type = "identity"
+            elif isinstance(row, ReportRecord):
+                fields = {
+                    "rawText": row.raw_text,
+                    "extractedEntities": row.extracted_entities or [],
+                }
+                record_type = "report"
+            elif isinstance(row, SocialRecord):
                 fields = {"actor": row.actor, "target": row.target, "platform": row.platform, "interaction": row.interaction}
-            bundle.append({"evidence_id": evidence_id, "timestamp": row.timestamp.isoformat(), "fields": fields})
+                record_type = "social"
+            else:
+                raise ValueError(f"Unsupported record type in story generation: {type(row).__name__}")
+            bundle.append({"evidence_id": evidence_id, "timestamp": row.timestamp.isoformat(), "fields": fields, "record_type": record_type})
         narrative, provider = await self._llm_narrative(bundle)
         if narrative is None:
             sentences = []
@@ -375,6 +396,20 @@ class DataStore:
                     text = f"Network traffic connected {fields['sourceIp']} to {fields['destinationIp']} using {fields['protocol']}"
                 elif "sender" in fields:
                     text = f"{fields['sender']} transferred {fields['amount']:.2f} to {fields['recipient']} via {fields['channel']}"
+                elif item["record_type"] == "identity":
+                    text = f"{fields['subject']} submitted a {fields['documentType']} identity record"
+                elif item["record_type"] == "report":
+                    raw_text = (fields.get("rawText") or "").strip()
+                    if raw_text:
+                        text = raw_text
+                    else:
+                        extracted_entities = fields.get("extractedEntities") or []
+                        entities_text = ", ".join(
+                            f"{entity.get('type')}: {entity.get('value')}"
+                            for entity in extracted_entities
+                            if isinstance(entity, dict) and entity.get("type") and entity.get("value")
+                        )
+                        text = f"Report identified related entities: {entities_text}" if entities_text else "Report identified related entities"
                 else:
                     text = f"{fields['actor']} created a {fields['interaction']} relationship with {fields['target']} on {fields['platform']}"
                 sentences.append(f"{text} [{item['evidence_id']}].")
@@ -427,23 +462,25 @@ class DataStore:
             ipdr = list(await db.scalars(select(IpdrRecord).where(IpdrRecord.case_id == case_id)))
             banking = list(await db.scalars(select(BankingRecord).where(BankingRecord.case_id == case_id)))
             social = list(await db.scalars(select(SocialRecord).where(SocialRecord.case_id == case_id)))
+            identity_rows = list(await db.scalars(select(IdentityRecord).where(IdentityRecord.case_id == case_id)))
             reports = list(await db.scalars(select(ReportRecord).where(ReportRecord.case_id == case_id)))
-            if cdr or ipdr or social or banking or reports:
-                evidence_ids = await self._ensure_provenance(db, case_id, cdr + ipdr + banking + social, "graph_edge")
+            if cdr or ipdr or social or banking or identity_rows or reports:
+                provenance_rows = cdr + ipdr + banking + social + identity_rows
+                evidence_ids = await self._ensure_provenance(db, case_id, provenance_rows, "graph_edge")
                 entities = {}
                 edges = []
                 identity_phones = {}
                 for item in cdr:
-                    identity = item.attributes.get("identity_id")
-                    if identity:
-                        identity_phones.setdefault(identity, set()).update((item.caller, item.callee))
-                shared_identities = {identity for identity, phones in identity_phones.items() if len(phones) > 1}
+                    identity_id = item.attributes.get("identity_id")
+                    if identity_id:
+                        identity_phones.setdefault(identity_id, set()).update((item.caller, item.callee))
+                shared_identities = {identity_id for identity_id, phones in identity_phones.items() if len(phones) > 1}
                 ip_identities = {}
                 for item in ipdr:
-                    identity = item.attributes.get("identity_id")
-                    if identity:
-                        ip_identities.setdefault(item.source_ip, set()).add(identity)
-                        ip_identities.setdefault(item.destination_ip, set()).add(identity)
+                    identity_id = item.attributes.get("identity_id")
+                    if identity_id:
+                        ip_identities.setdefault(item.source_ip, set()).add(identity_id)
+                        ip_identities.setdefault(item.destination_ip, set()).add(identity_id)
                 shared_ips = {ip for ip, identities_for_ip in ip_identities.items() if len(identities_for_ip) > 1}
                 social_links = {(item.actor, item.target) for item in social}
                 entity_keys: dict[str, tuple[str, str]] = {}
@@ -478,6 +515,9 @@ class DataStore:
                     entity_evidence_ids[sender_id].add(banking_evidence_id)
                     entity_evidence_ids[recipient_id].add(banking_evidence_id)
                     edges.append(GraphEdge(id=row.id, source=sender_id, target=recipient_id, kind="TRANSFERRED_TO", confidence="high", weight=1, evidenceId=evidence_ids[row.id], evidenceIds=[evidence_ids[row.id]]))
+                for row in identity_rows:
+                    subject_id = add_entity("person", row.subject)
+                    entity_evidence_ids[subject_id].add(evidence_ids[row.id])
                 for row in social:
                     actor_id = add_entity("social", row.actor)
                     target_id = add_entity("social", row.target)

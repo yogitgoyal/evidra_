@@ -124,18 +124,18 @@ async def get_dashboard_summary(db: AsyncSession = Depends(get_db)):
 
 
 @app.get("/dashboard/cases", dependencies=[Depends(require_officer)])
-def get_dashboard_cases():
-    return store.cases_for_dashboard()
+async def get_dashboard_cases(db: AsyncSession = Depends(get_db)):
+    return (await store.dashboard_for_user(db))["cases"]
 
 
 @app.get("/dashboard/alerts", dependencies=[Depends(require_officer)])
-def get_dashboard_alerts():
-    return store.alerts_for_dashboard()
+async def get_dashboard_alerts(db: AsyncSession = Depends(get_db)):
+    return (await store.dashboard_for_user(db))["alerts"]
 
 
 @app.get("/dashboard/activity", dependencies=[Depends(require_officer)])
-def get_dashboard_activity():
-    return store.activity_for_dashboard()
+async def get_dashboard_activity(db: AsyncSession = Depends(get_db)):
+    return (await store.dashboard_for_user(db))["activity"]
 
 
 @app.get("/cases/{case_id}/graph", dependencies=[Depends(require_officer)])

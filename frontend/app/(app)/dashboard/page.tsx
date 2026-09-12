@@ -5,7 +5,15 @@ import Link from "next/link";
 import { getDashboard, listCases, CaseApiResponse } from "@/lib/api";
 import { Card, SectionLabel } from "@/components/ui/primitives";
 import { StartInvestigation } from "@/components/dashboard/StartInvestigation";
+import { ActivityChart } from "@/components/dashboard/ActivityChart";
 import { Loader2, Search } from "lucide-react";
+
+type DashboardActivity = {
+  day: string;
+  fullDate: string;
+  alerts: number;
+  resolved: number;
+};
 
 export default function DashboardPage() {
   const [dashboard, setDashboard] = useState<Record<string, unknown> | null>(null);
@@ -27,6 +35,7 @@ export default function DashboardPage() {
   }, []);
 
   const summary = (dashboard?.summary ?? {}) as Record<string, number>;
+  const activity = (dashboard?.activity ?? []) as DashboardActivity[];
   const statusOptions = Array.from(
     new Set(cases.map((item) => item.status).filter((value): value is NonNullable<typeof value> => Boolean(value))),
   ).sort();
@@ -72,6 +81,7 @@ export default function DashboardPage() {
               <Card key={key} className="p-5"><div className="font-mono text-2xl font-bold text-text">{summary[key] ?? "—"}</div><div className="mt-1 text-xs capitalize text-text-dim">{key.replace(/([A-Z])/g, " $1")}</div></Card>
             ))}
           </div>
+          <ActivityChart data={activity} />
           <Card className="p-6">
         <div className="mb-4 flex flex-col gap-3 border-b border-border-soft pb-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center justify-between gap-4">

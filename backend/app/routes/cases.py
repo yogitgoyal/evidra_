@@ -3,10 +3,11 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func, literal, select, union_all
+from sqlalchemy import func, literal, select, update, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db
+from app.models.audit import AuditLogEntry
 from app.models.case import Case
 from app.models.datasets import BankingRecord, CdrRecord, EvidenceRecordRow, IpdrRecord, SocialRecord
 
@@ -152,5 +153,21 @@ async def delete_case(case_id: str, db: AsyncSession = Depends(get_db)) -> None:
     case = await db.get(Case, case_id)
     if case is None:
         raise HTTPException(status_code=404, detail="Case not found.")
+    db.add(
+        AuditLogEntry(
+            case_id=case.id,
+            user="system",
+            action="case_deleted",
+            entity_type="case",
+            entity_id=case.id,
+            details={"deleted_case_id": case.id, "case_name": case.name},
+        )
+    )
+    await db.flush()
+    await db.execute(
+        update(AuditLogEntry)
+        .where(AuditLogEntry.case_id == case.id)
+        .values(case_id=None)
+    )
     await db.delete(case)
     await db.commit()

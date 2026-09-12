@@ -47,6 +47,7 @@ class IpdrUploadBatch(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    case = relationship("Case", back_populates="ipdr_upload_batches")
 
 
 class BankingUploadBatch(Base):
@@ -60,6 +61,7 @@ class BankingUploadBatch(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    case = relationship("Case", back_populates="banking_upload_batches")
 
 
 class SocialUploadBatch(Base):
@@ -73,6 +75,7 @@ class SocialUploadBatch(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    case = relationship("Case", back_populates="social_upload_batches")
 
 
 class BankingRecord(CaseLinkedRecord):

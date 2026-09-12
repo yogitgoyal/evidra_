@@ -26,11 +26,36 @@ class Case(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    cdr_records = relationship("CdrRecord", back_populates="case")
-    ipdr_records = relationship("IpdrRecord", back_populates="case")
-    banking_records = relationship("BankingRecord", back_populates="case")
-    social_records = relationship("SocialRecord", back_populates="case")
-    identity_records = relationship("IdentityRecord", back_populates="case")
-    report_records = relationship("ReportRecord", back_populates="case")
-    evidence_records = relationship("EvidenceRecordRow", back_populates="case")
-    audit_logs = relationship("AuditLogEntry", back_populates="case")
+    cdr_records = relationship(
+        "CdrRecord", back_populates="case", cascade="all, delete-orphan"
+    )
+    ipdr_records = relationship(
+        "IpdrRecord", back_populates="case", cascade="all, delete-orphan"
+    )
+    banking_records = relationship(
+        "BankingRecord", back_populates="case", cascade="all, delete-orphan"
+    )
+    social_records = relationship(
+        "SocialRecord", back_populates="case", cascade="all, delete-orphan"
+    )
+    identity_records = relationship(
+        "IdentityRecord", back_populates="case", cascade="all, delete-orphan"
+    )
+    report_records = relationship(
+        "ReportRecord", back_populates="case", cascade="all, delete-orphan"
+    )
+    evidence_records = relationship(
+        "EvidenceRecordRow", back_populates="case", cascade="all, delete-orphan"
+    )
+    audit_logs = relationship(
+        "AuditLogEntry", back_populates="case", passive_deletes="all"
+    )
+    ipdr_upload_batches = relationship(
+        "IpdrUploadBatch", back_populates="case", cascade="all, delete-orphan"
+    )
+    banking_upload_batches = relationship(
+        "BankingUploadBatch", back_populates="case", cascade="all, delete-orphan"
+    )
+    social_upload_batches = relationship(
+        "SocialUploadBatch", back_populates="case", cascade="all, delete-orphan"
+    )

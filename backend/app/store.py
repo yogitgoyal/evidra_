@@ -690,66 +690,107 @@ class DataStore:
 
     async def dashboard_for_user(self, db: AsyncSession | None = None) -> dict:
         """Return the data needed to render the command-center dashboard."""
-        active_cases = [case for case in self.cases if case.status == "active"]
-        open_alerts = [alert for alert in self.alerts if alert.severity in {"high", "watch"}]
-        case_count = len(self.cases)
-        dataset_activity = self.weekly_activity
-        if db:
-            case_count = await db.scalar(select(func.count()).select_from(Case)) or 0
-            dataset_count = 0
-            for model in (CdrRecord, IpdrRecord, BankingRecord, SocialRecord):
-                dataset_count += await db.scalar(select(func.count()).select_from(model)) or 0
-            dataset_activity = [{"day": "Live", "fullDate": "Database datasets", "alerts": dataset_count, "resolved": 0}]
-            fraud = await self.fraud_analysis("*", db)
-            evidence_count = await db.scalar(select(func.count()).select_from(EvidenceRecordRow)) or 0
-            first_case_id = await db.scalar(select(Case.id).order_by(Case.created_at.desc()))
-            story = (
-                await self.story_claims_for_case(first_case_id, db)
-                if first_case_id
-                else {"claims": [], "provenanceVerified": False}
-            )
-            dashboard_alerts = [
-                {
-                    **alert.model_dump(),
-                    "evidenceIds": [self._evidence_id(item) for item in alert.evidenceIds],
-                    "narrativeClaimIds": [
-                        claim["id"]
-                        for claim in story["claims"]
-                        if any(evidence_id in claim["evidenceIds"] for evidence_id in [self._evidence_id(item) for item in alert.evidenceIds])
-                    ],
-                }
-                for alert in self.alerts
-            ]
-            dataset_activity.append({
-                "day": "Fraud",
-                "fullDate": "Dataset anomaly analysis",
-                "alerts": fraud["anomalyEventsCount"],
-                "resolved": 0,
-            })
-        else:
-            evidence_count = len(self.evidence)
-            dashboard_alerts = self.alerts
-            story = {"provenanceVerified": False}
-            fraud = {
-                "suspiciousEntitiesCount": 0,
-                "flaggedTransactionsCount": 0,
-                "anomalyEventsCount": 0,
+        if db is None:
+            demo_mode = os.getenv("EVIDRA_DEMO_MODE", "false").casefold() == "true"
+            if not demo_mode:
+                raise HTTPException(status_code=503, detail="Database session required.")
+            return {
+                "summary": {
+                    "activeCases": sum(case.status == "active" for case in self.cases),
+                    "openAlerts": sum(alert.severity in {"high", "watch"} for alert in self.alerts),
+                    "highSeverityAlerts": sum(alert.severity == "high" for alert in self.alerts),
+                    "entitiesTracked": sum(case.entities for case in self.cases),
+                    "caseCount": len(self.cases),
+                    "avgTimeToLeadMinutes": 6.4,
+                    "suspiciousEntitiesCount": 0,
+                    "flaggedTransactionsCount": 0,
+                    "anomalyEventsCount": 0,
+                    "evidenceCount": len(self.evidence),
+                    "provenanceVerified": False,
+                    "storyModeVerified": False,
+                },
+                "cases": self.cases,
+                "alerts": self.alerts,
+                "activity": self.weekly_activity,
             }
+
+        cases = list(await db.scalars(select(Case).order_by(Case.created_at.desc(), Case.id)))
+        entity_values: dict[str, set[str]] = {case.id: set() for case in cases}
+        for model, fields in (
+            (CdrRecord, ("caller", "callee")),
+            (IpdrRecord, ("source_ip", "destination_ip")),
+            (BankingRecord, ("sender", "recipient")),
+            (SocialRecord, ("actor", "target")),
+            (IdentityRecord, ("subject",)),
+        ):
+            rows = await db.scalars(select(model))
+            for row in rows:
+                entity_values[row.case_id].update(str(getattr(row, field)) for field in fields)
+        for row in await db.scalars(select(ReportRecord)):
+            entity_values[row.case_id].update(
+                str(item.get("value"))
+                for item in (row.extracted_entities or [])
+                if item.get("value")
+            )
+
+        case_payloads = [
+            {
+                "id": case.id,
+                "name": case.name,
+                "title": case.name,
+                "created_at": case.created_at,
+                "case_type": case.case_type,
+                "description": case.description,
+                "investigation_mode": case.investigation_mode,
+                "seed_type": case.seed_type,
+                "seed_value": case.seed_value,
+                "evidence_type": case.evidence_type,
+                "incident_date": case.incident_date,
+                "event_description": case.event_description,
+                "opened": case.created_at.date().isoformat(),
+                "status": case.status,
+                "priority": case.priority,
+                "lead": case.lead,
+                "tags": case.tags or [],
+                "entities": len(entity_values[case.id]),
+                "alerts": 0,
+                "riskScore": 0,
+            }
+            for case in cases
+        ]
+        dataset_count = 0
+        for model in (CdrRecord, IpdrRecord, BankingRecord, SocialRecord):
+            dataset_count += await db.scalar(select(func.count()).select_from(model)) or 0
+        dataset_activity = [{"day": "Live", "fullDate": "Database datasets", "alerts": dataset_count, "resolved": 0}]
+        fraud = await self.fraud_analysis("*", db)
+        evidence_count = await db.scalar(select(func.count()).select_from(EvidenceRecordRow)) or 0
+        first_case_id = cases[0].id if cases else None
+        story = (
+            await self.story_claims_for_case(first_case_id, db)
+            if first_case_id
+            else {"claims": [], "provenanceVerified": False}
+        )
+        dataset_activity.append({
+            "day": "Fraud",
+            "fullDate": "Dataset anomaly analysis",
+            "alerts": fraud["anomalyEventsCount"],
+            "resolved": 0,
+        })
         return {
             "summary": {
-                "activeCases": len(active_cases),
-                "openAlerts": len(open_alerts),
-                "highSeverityAlerts": sum(1 for alert in open_alerts if alert.severity == "high"),
-                "entitiesTracked": sum(case.entities for case in self.cases),
-                "caseCount": case_count,
+                "activeCases": sum(case.status == "active" for case in cases),
+                "openAlerts": 0,
+                "highSeverityAlerts": 0,
+                "entitiesTracked": sum(len(values) for values in entity_values.values()),
+                "caseCount": len(cases),
                 "avgTimeToLeadMinutes": 6.4,
                 **fraud,
                 "evidenceCount": evidence_count,
                 "provenanceVerified": evidence_count > 0,
                 "storyModeVerified": story["provenanceVerified"],
             },
-            "cases": self.cases,
-            "alerts": dashboard_alerts,
+            "cases": case_payloads,
+            "alerts": [],
             "activity": dataset_activity,
         }
 

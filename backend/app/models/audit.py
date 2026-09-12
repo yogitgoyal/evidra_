@@ -13,7 +13,9 @@ class AuditLogEntry(Base):
     __tablename__ = "audit_log_entries"
 
     id: Mapped[str] = mapped_column(String(128), primary_key=True, default=lambda: str(uuid4()))
-    case_id: Mapped[str] = mapped_column(ForeignKey("cases.id"), index=True, nullable=False)
+    case_id: Mapped[str | None] = mapped_column(
+        ForeignKey("cases.id", ondelete="SET NULL"), index=True, nullable=True
+    )
     user: Mapped[str] = mapped_column(String(128), nullable=False, default="system")
     action: Mapped[str] = mapped_column(String(64), nullable=False)
     entity_type: Mapped[str] = mapped_column(String(64), nullable=False)

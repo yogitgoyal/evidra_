@@ -111,8 +111,10 @@ export default function DashboardPage() {
         ) : filteredCases.length === 0 ? (
           <p className="text-sm text-text-dim">No cases match your filters.</p>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {filteredCases.map((item) => <Link key={item.id} href={`/case/${item.id}`} className="rounded-lg border border-border-soft p-4 hover:border-cyan/50"><div className="font-medium text-text">{item.title ?? item.name}</div><div className="mt-1 text-xs text-text-dim">Case #{item.id} · {item.status ?? "active"}</div></Link>)}
+          <div className="max-h-[420px] overflow-y-auto pb-1">
+            <div className="grid gap-3 pr-1 sm:grid-cols-2">
+              {filteredCases.map((item) => <Link key={item.id} href={`/case/${item.id}`} className="rounded-lg border border-border-soft p-4 hover:border-cyan/50"><div className="font-medium text-text">{item.title ?? item.name}</div><div className="mt-1 text-xs text-text-dim">Case #{item.id} · {item.status ?? "active"}</div></Link>)}
+            </div>
           </div>
         )}
       </Card>

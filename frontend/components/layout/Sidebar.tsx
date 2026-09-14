@@ -27,6 +27,12 @@ import {
 
 const caseTabs = [
   { href: "", label: "Overview", icon: Workflow },
+  { href: "/reports", label: "FIR Reports", icon: FileText },
+  { href: "/data", label: "CDR Records", icon: FileSearch },
+  { href: "/ipdr", label: "IPDR Records", icon: FileSearch },
+  { href: "/banking", label: "Banking Records", icon: Wallet },
+  { href: "/social", label: "Social Records", icon: Users2 },
+  { href: "/identity", label: "Identity Records", icon: FileSearch },
   { href: "/graph", label: "Investigation Graph", icon: GitFork },
   { href: "/timeline", label: "Digital Timeline", icon: History },
   { href: "/financial", label: "Financial Flow", icon: Landmark },
@@ -34,12 +40,6 @@ const caseTabs = [
   { href: "/copilot", label: "AI Copilot", icon: BotMessageSquare },
   { href: "/evidence", label: "Evidence Viewer", icon: FileSearch },
   { href: "/report", label: "Report Generator", icon: FileOutput },
-  { href: "/data", label: "CDR Records", icon: FileSearch },
-  { href: "/banking", label: "Banking Records", icon: Wallet },
-  { href: "/social", label: "Social Records", icon: Users2 },
-  { href: "/ipdr", label: "IPDR Records", icon: FileSearch },
-  { href: "/identity", label: "Identity Records", icon: FileSearch },
-  { href: "/reports", label: "FIR Reports", icon: FileText },
 ];
 
 export function Sidebar() {

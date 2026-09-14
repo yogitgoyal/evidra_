@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { X, FileCheck2, Clock, Hash, Database, ShieldCheck, Download } from "lucide-react";
 import { downloadEvidenceFile, getCaseAudit, getEvidenceRecord, AuditEntry } from "@/lib/api";
 import { SourceTag } from "@/components/ui/primitives";
+import { cn, formatEvidenceDateTime } from "@/lib/utils";
 
 function sourceRecordHref(caseId: string, source: string): string | null {
   const paths: Record<string, string> = {
@@ -99,7 +100,7 @@ export function EvidenceProvider({ children, caseId }: { children: ReactNode; ca
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 420, opacity: 0 }}
               transition={{ type: "spring", stiffness: 320, damping: 34 }}
-              className="fixed right-0 top-0 z-50 h-full w-full max-w-[420px] overflow-y-auto border-l border-border bg-surface"
+              className="fixed right-0 top-0 z-50 h-full w-[min(520px,100vw)] max-w-[100vw] overflow-x-hidden overflow-y-auto border-l border-border bg-surface"
             >
               <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-soft bg-surface/95 px-5 py-4 backdrop-blur">
                 <div className="flex items-center gap-2">
@@ -127,13 +128,13 @@ export function EvidenceProvider({ children, caseId }: { children: ReactNode; ca
                       initial={{ opacity: 0, y: 12 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: idx * 0.06, duration: 0.35 }}
-                      className="rounded-xl border border-border-soft bg-bg-raised p-4"
+                      className="min-w-0 rounded-xl border border-border-soft bg-bg-raised p-4"
                     >
-                      <div className="mb-3 flex items-center justify-between">
+                      <div className="mb-3 flex min-w-0 flex-wrap items-center justify-between gap-2">
                         <SourceTag source={record.source} />
-                        <span className="font-mono text-[11px] text-text-faint">{record.id}</span>
+                        <span className="max-w-full break-all font-mono text-[11px] text-text-faint">{record.id}</span>
                       </div>
-                      <p className="mb-3 text-sm leading-relaxed text-text">{record.summary}</p>
+                      <p className="mb-3 max-w-full break-words text-sm leading-relaxed text-text">{record.summary}</p>
 
                       {caseId && sourceRecordHref(caseId, record.source) && (
                         <a
@@ -167,9 +168,9 @@ export function EvidenceProvider({ children, caseId }: { children: ReactNode; ca
                       )}
 
                       <dl className="grid grid-cols-1 gap-2 text-xs">
-                        <Row icon={<Clock size={12} />} label="Timestamp" value={record.timestamp} mono />
-                        <Row icon={<Hash size={12} />} label="Record hash" value={record.hash} mono />
-                        <Row icon={<Database size={12} />} label="Ingested" value={record.ingested} mono />
+                        <Row icon={<Clock size={12} />} label="Timestamp" value={formatEvidenceDateTime(record.timestamp)} mono />
+                        <Row icon={<Hash size={12} />} label="Record hash" value={record.hash} mono technical />
+                        <Row icon={<Database size={12} />} label="Ingested" value={formatEvidenceDateTime(record.ingested)} mono />
                       </dl>
 
                       <div className="mt-3 border-t border-border-soft pt-3">
@@ -178,9 +179,9 @@ export function EvidenceProvider({ children, caseId }: { children: ReactNode; ca
                         </span>
                         <div className="space-y-1.5">
                           {Object.entries(record.fields).map(([k, v]) => (
-                            <div key={k} className="flex items-center justify-between gap-3 text-xs">
-                              <span className="text-text-faint">{k}</span>
-                              <span className="font-mono text-text-dim">{String(v)}</span>
+                            <div key={k} className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1 text-xs">
+                              <span className="shrink-0 text-text-faint">{k}</span>
+                              <span className="min-w-0 max-w-full break-words text-left font-mono text-text-dim [overflow-wrap:anywhere] sm:flex-1 sm:text-right">{String(v)}</span>
                             </div>
                           ))}
                         </div>
@@ -195,9 +196,9 @@ export function EvidenceProvider({ children, caseId }: { children: ReactNode; ca
                         ) : (
                           <div className="space-y-1.5">
                             {recordAudits.map((entry) => (
-                              <div key={entry.id} className="flex items-center justify-between gap-3 text-xs">
-                                <span className="font-medium text-text-dim">{entry.action}</span>
-                                <span className="text-text-faint">{entry.user} · {entry.timestamp}</span>
+                              <div key={entry.id} className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1 text-xs">
+                                <span className="max-w-full break-words font-medium text-text-dim">{entry.action}</span>
+                                <span className="min-w-0 max-w-full break-words text-left text-text-faint [overflow-wrap:anywhere] sm:flex-1 sm:text-right">{entry.user} · {formatEvidenceDateTime(entry.timestamp)}</span>
                               </div>
                             ))}
                           </div>
@@ -220,14 +221,23 @@ export function EvidenceProvider({ children, caseId }: { children: ReactNode; ca
   );
 }
 
-function Row({ icon, label, value, mono }: { icon: ReactNode; label: string; value: string; mono?: boolean }) {
+function Row({ icon, label, value, mono, technical }: { icon: ReactNode; label: string; value: string; mono?: boolean; technical?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="flex items-center gap-1.5 text-text-faint">
+    <div className={cn(
+      "flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1",
+      technical && "sm:grid sm:grid-cols-[auto_minmax(0,1fr)]",
+    )}>
+      <span className="flex shrink-0 items-center gap-1.5 text-text-faint">
         {icon}
         {label}
       </span>
-      <span className={mono ? "font-mono text-text-dim" : "text-text-dim"}>{value}</span>
+      <span className={cn(
+        "min-w-0 max-w-full text-left text-text-dim",
+        mono && "font-mono",
+        technical
+          ? "block w-full text-left break-all [overflow-wrap:anywhere] sm:col-start-2 sm:w-full"
+          : "break-words [overflow-wrap:anywhere] sm:flex-1 sm:text-right",
+      )}>{value}</span>
     </div>
   );
 }

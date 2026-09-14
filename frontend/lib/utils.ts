@@ -33,3 +33,26 @@ export function confidenceLabel(c: string) {
   if (c === "ambiguous") return "Ambiguous";
   return "No reliable match";
 }
+
+export function formatEvidenceDateTime(value: string | null | undefined) {
+  if (!value?.trim()) return "—";
+
+  const trimmed = value.trim();
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(trimmed);
+  const date = new Date(hasTimezone ? trimmed : `${trimmed}Z`);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  }).formatToParts(date);
+  const getPart = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+
+  return `${getPart("day")} ${getPart("month")} ${getPart("year")}, ${getPart("hour")}:${getPart("minute")}:${getPart("second")} ${getPart("dayPeriod").toUpperCase()} IST`;
+}

@@ -20,7 +20,7 @@ export function CTASection() {
             Three minutes from a single phone number to a fully cited investigation story.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <Link href="/dashboard">
+            <Link href="/login">
               <Button size="lg">
                 Enter Command Center <ArrowRight size={16} />
               </Button>

@@ -50,7 +50,7 @@ export function Hero() {
             transition={{ duration: 0.65, delay: 0.24 }}
             className="mt-8 flex flex-wrap items-center gap-3"
           >
-            <Link href="/dashboard">
+            <Link href="/login">
               <Button size="lg">
                 Enter Command Center <ArrowRight size={16} />
               </Button>

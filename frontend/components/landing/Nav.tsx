@@ -44,7 +44,7 @@ export function Nav() {
               Sign in
             </Button>
           </Link>
-          <Link href="/dashboard">
+          <Link href="/login">
             <Button variant="primary" size="sm">
               Enter Command Center
             </Button>

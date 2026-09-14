@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { createReport, listReports, ReportRecord, uploadReport } from "@/lib/api";
+import { FilePicker } from "@/components/ui/FilePicker";
+import { Toast, useToast } from "@/components/ui/Toast";
 
 export default function ReportsPage() {
   const caseId = useParams()?.id as string;
@@ -11,6 +13,7 @@ export default function ReportsPage() {
   const [reports, setReports] = useState<ReportRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const { toast, showToast } = useToast();
 
   async function loadReports() {
     try {
@@ -26,6 +29,10 @@ export default function ReportsPage() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (!rawText.trim() && !file) {
+      showToast("Please choose a file or paste content before uploading.", "error");
+      return;
+    }
     if (!rawText.trim() && !file) {
       setError("Paste report text or choose a PDF/DOCX file.");
       return;
@@ -56,6 +63,7 @@ export default function ReportsPage() {
           Paste unstructured text to extract reviewable evidence entities.
         </p>
       </div>
+      <Toast toast={toast} />
 
       <form onSubmit={submit} className="space-y-4 rounded-xl border border-border-soft bg-surface p-6">
         <textarea
@@ -65,20 +73,13 @@ export default function ReportsPage() {
           rows={12}
           className="w-full rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text outline-none focus:border-cyan/50"
         />
-        <label className="block text-sm text-text">
-          Or upload a PDF/DOCX file
-          <input
-            type="file"
-            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-            className="mt-2 block w-full text-sm"
-          />
-        </label>
-        {file && (
-          <p className="text-xs text-text-faint">
-            Selected: {file.name}
-          </p>
-        )}
+        <p className="text-sm text-text">Or upload a PDF/DOCX file</p>
+        <FilePicker
+          id="fir-report-file"
+          accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+          file={file}
+        />
         {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
         <button
           type="submit"

@@ -4,6 +4,8 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { createCdr, listCdr, CdrRecord, uploadCdrFile, BulkUploadResponse } from "@/lib/api";
+import { FilePicker } from "@/components/ui/FilePicker";
+import { Toast, useToast } from "@/components/ui/Toast";
 
 export default function CaseDataPage() {
   const params = useParams();
@@ -19,6 +21,7 @@ export default function CaseDataPage() {
   const [bulkText, setBulkText] = useState("");
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkResult, setBulkResult] = useState<BulkUploadResponse | null>(null);
+  const { toast, showToast } = useToast();
 
   async function loadRecords() {
     try {
@@ -63,6 +66,10 @@ export default function CaseDataPage() {
   async function handleBulkSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!bulkFile && !bulkText.trim()) {
+      showToast("Please choose a file or paste content before uploading.", "error");
+      return;
+    }
+    if (!bulkFile && !bulkText.trim()) {
       setError("Choose a CSV file or paste CSV content first.");
       return;
     }
@@ -91,6 +98,7 @@ export default function CaseDataPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-8 px-6 py-8">
       <h1 className="text-xl font-semibold text-text">Add Call Records (CDR)</h1>
+      <Toast toast={toast} />
       {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
 
       <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-border-soft bg-surface p-6">
@@ -141,11 +149,11 @@ export default function CaseDataPage() {
           <h2 className="text-sm font-semibold text-text">Bulk CSV/XLSX upload</h2>
           <p className="mt-1 text-xs text-text-faint">Columns: caller, callee, duration_seconds, timestamp</p>
         </div>
-        <input
-          type="file"
+        <FilePicker
+          id="cdr-file"
           accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           onChange={(e) => setBulkFile(e.target.files?.[0] ?? null)}
-          className="block w-full text-sm text-text-faint"
+          file={bulkFile}
         />
         <textarea
           value={bulkText}

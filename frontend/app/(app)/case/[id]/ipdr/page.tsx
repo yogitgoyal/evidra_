@@ -10,6 +10,8 @@ import {
   listIpdr,
   uploadIpdrBulk,
 } from "@/lib/api";
+import { FilePicker } from "@/components/ui/FilePicker";
+import { Toast, useToast } from "@/components/ui/Toast";
 
 export default function IpdrPage() {
   const caseId = useParams()?.id as string;
@@ -23,6 +25,7 @@ export default function IpdrPage() {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkResult, setBulkResult] = useState<BulkUploadResponse | null>(null);
   const [sourceFileUrl, setSourceFileUrl] = useState<string | null>(null);
+  const { toast, showToast } = useToast();
 
   const load = () => listIpdr(caseId).then(setRecords).catch((err: Error) => setError(err.message));
 
@@ -57,6 +60,10 @@ export default function IpdrPage() {
   async function handleBulkSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!bulkFile && !bulkText.trim()) {
+      showToast("Please choose a file or paste content before uploading.", "error");
+      return;
+    }
+    if (!bulkFile && !bulkText.trim()) {
       setError("Choose a CSV/XLSX file or paste CSV content first.");
       return;
     }
@@ -90,6 +97,7 @@ export default function IpdrPage() {
 
   return <div className="mx-auto max-w-3xl space-y-8 px-6 py-8">
     <h1 className="text-xl font-semibold text-text">Add IPDR Records</h1>
+    <Toast toast={toast} />
     {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
     <form onSubmit={submit} className="grid gap-4 rounded-xl border border-border-soft bg-surface p-6">
       <input required value={sourceIp} onChange={(e) => setSourceIp(e.target.value)} placeholder="Source IP" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" />
@@ -103,11 +111,11 @@ export default function IpdrPage() {
         <h2 className="text-sm font-semibold text-text">Bulk CSV/XLSX upload</h2>
         <p className="mt-1 text-xs text-text-faint">Columns: source_ip, destination_ip, protocol, timestamp</p>
       </div>
-      <input
-        type="file"
+      <FilePicker
+        id="ipdr-file"
         accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         onChange={(event) => setBulkFile(event.target.files?.[0] ?? null)}
-        className="block w-full text-sm text-text-faint"
+        file={bulkFile}
       />
       <textarea
         value={bulkText}

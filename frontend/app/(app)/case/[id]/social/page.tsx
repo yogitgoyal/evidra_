@@ -123,10 +123,11 @@ export default function CaseSocialPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 px-6 py-8">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-8 px-6 py-8 lg:px-8">
       <h1 className="text-xl font-semibold text-text">Add Social Records</h1>
       <Toast toast={toast} />
 
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:gap-8">
       <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-border-soft bg-surface p-6">
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -227,6 +228,7 @@ export default function CaseSocialPage() {
           </div>
         )}
       </form>
+      </div>
 
       <div>
         <h2 className="mb-3 text-sm font-semibold text-text-faint uppercase tracking-wide">

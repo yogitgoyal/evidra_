@@ -95,10 +95,11 @@ export default function IpdrPage() {
     }
   }
 
-  return <div className="mx-auto max-w-3xl space-y-8 px-6 py-8">
+  return <div className="mx-auto w-full min-w-0 max-w-7xl space-y-8 px-6 py-8 lg:px-8">
     <h1 className="text-xl font-semibold text-text">Add IPDR Records</h1>
     <Toast toast={toast} />
     {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:gap-8">
     <form onSubmit={submit} className="grid gap-4 rounded-xl border border-border-soft bg-surface p-6">
       <input required value={sourceIp} onChange={(e) => setSourceIp(e.target.value)} placeholder="Source IP" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" />
       <input required value={destinationIp} onChange={(e) => setDestinationIp(e.target.value)} placeholder="Destination IP" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" />
@@ -157,6 +158,7 @@ export default function IpdrPage() {
         </div>
       )}
     </form>
+    </div>
 
     <div>
       <h2 className="mb-3 text-sm font-semibold text-text-faint uppercase tracking-wide">

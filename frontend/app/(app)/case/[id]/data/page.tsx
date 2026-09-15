@@ -96,12 +96,13 @@ export default function CaseDataPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 px-6 py-8">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-8 px-6 py-8 lg:px-8">
       <h1 className="text-xl font-semibold text-text">Add Call Records (CDR)</h1>
       <Toast toast={toast} />
       {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
 
-      <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-border-soft bg-surface p-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:gap-8">
+        <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-border-soft bg-surface p-6">
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="mb-1 block text-sm text-text-faint">Caller Number</label>
@@ -142,9 +143,9 @@ export default function CaseDataPage() {
         >
           {loading ? "Adding..." : "Add Record"}
         </button>
-      </form>
+        </form>
 
-      <form onSubmit={handleBulkSubmit} className="space-y-4 rounded-xl border border-cyan/30 bg-surface p-6">
+        <form onSubmit={handleBulkSubmit} className="space-y-4 rounded-xl border border-cyan/30 bg-surface p-6">
         <div>
           <h2 className="text-sm font-semibold text-text">Bulk CSV/XLSX upload</h2>
           <p className="mt-1 text-xs text-text-faint">Columns: caller, callee, duration_seconds, timestamp</p>
@@ -178,7 +179,8 @@ export default function CaseDataPage() {
             )}
           </div>
         )}
-      </form>
+        </form>
+      </div>
 
       <div>
         <h2 className="mb-3 text-sm font-semibold text-text-faint uppercase tracking-wide">

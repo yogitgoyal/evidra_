@@ -20,7 +20,7 @@ export default function IdentityPage() {
       setSubject(""); setDocumentHash(""); await load();
     } catch (err) { setError(err instanceof Error ? err.message : "Failed to add identity record."); }
   }
-  return <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
+  return <div className="mx-auto max-w-4xl space-y-6 px-6 py-8 lg:px-8">
     <h1 className="text-xl font-semibold text-text">Add Identity Records</h1>
     {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
     <form onSubmit={submit} className="grid gap-4 rounded-xl border border-border-soft bg-surface p-6">

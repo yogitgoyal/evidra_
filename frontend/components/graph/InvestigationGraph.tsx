@@ -343,6 +343,14 @@ export function InvestigationGraph({
           },
         },
         {
+          selector:
+            'edge[kind = "CALLED"], edge[kind = "MESSAGED"], edge[kind = "TRANSFERRED_TO"], edge[kind = "MENTIONED"]',
+          style: {
+            "target-arrow-shape": "triangle",
+            "target-arrow-color": "#334155",
+          },
+        },
+        {
           selector: "node:selected",
           style: {
             "border-color": "#2563eb",

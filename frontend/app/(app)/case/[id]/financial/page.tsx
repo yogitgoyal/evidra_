@@ -6,6 +6,7 @@ import { Landmark } from "lucide-react";
 import { getFinancial } from "@/lib/api";
 import { Card, SectionLabel } from "@/components/ui/primitives";
 import { FinancialFlowGraph } from "@/components/graph/FinancialFlowGraph";
+import { formatEvidenceDateTime } from "@/lib/utils";
 
 export default function FinancialFlowPage() {
   const params = useParams();
@@ -47,7 +48,7 @@ export default function FinancialFlowPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-[12.5px]">
             <thead><tr className="border-b border-border-soft text-[10.5px] uppercase tracking-wider text-text-faint">
-              <th className="pb-2.5 pr-4">From</th><th className="pb-2.5 pr-4">To</th><th className="pb-2.5 pr-4">Amount</th><th className="pb-2.5 pr-4">Channel</th><th className="pb-2.5">Evidence</th>
+              <th className="pb-2.5 pr-4">From</th><th className="pb-2.5 pr-4">To</th><th className="pb-2.5 pr-4">Amount</th><th className="pb-2.5 pr-4">Channel</th><th className="pb-2.5 pr-4">Timestamp</th><th className="pb-2.5">Evidence</th>
             </tr></thead>
             <tbody>{transactions.map((transaction, index) => (
               <tr key={`${transaction.evidenceId ?? "transaction"}-${index}`} className="border-b border-border-soft/60">
@@ -55,6 +56,7 @@ export default function FinancialFlowPage() {
                 <td className="py-2.5 pr-4 font-mono text-text-dim">{String(transaction.to)}</td>
                 <td className="py-2.5 pr-4 font-mono font-semibold text-text">₹{Number(transaction.amount).toLocaleString("en-IN")}</td>
                 <td className="py-2.5 pr-4 text-text-dim">{String(transaction.channel)}</td>
+                <td className="py-2.5 pr-4 font-mono text-text-faint">{formatEvidenceDateTime(transaction.timestamp)}</td>
                 <td className="py-2.5 font-mono text-text-faint">{String(transaction.evidenceId ?? "—")}</td>
               </tr>
             ))}</tbody>

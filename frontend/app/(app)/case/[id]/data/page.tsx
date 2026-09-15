@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { createCdr, listCdr, CdrRecord, uploadCdrFile, BulkUploadResponse } from "@/lib/api";
 import { FilePicker } from "@/components/ui/FilePicker";
 import { Toast, useToast } from "@/components/ui/Toast";
+import { formatEvidenceDateTime } from "@/lib/utils";
 
 export default function CaseDataPage() {
   const params = useParams();
@@ -195,7 +196,10 @@ export default function CaseDataPage() {
               <span className="text-text">
                 {r.caller} → {r.callee}
               </span>
-              <span className="text-text-faint">{r.duration_seconds}s</span>
+              <span className="flex items-center gap-3 text-xs text-text-faint">
+                <span>{r.duration_seconds}s</span>
+                <span>{formatEvidenceDateTime(r.timestamp)}</span>
+              </span>
             </div>
           ))}
           {records.length === 0 && (

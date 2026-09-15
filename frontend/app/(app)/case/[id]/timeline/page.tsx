@@ -9,7 +9,7 @@ import { Card, Badge, SectionLabel, SourceTag } from "@/components/ui/primitives
 import { Cite } from "@/components/evidence/Cite";
 import { EntityIcon } from "@/components/case/EntityIcon";
 import { TimelineSparkline } from "@/components/timeline/TimelineSparkline";
-import { cn } from "@/lib/utils";
+import { cn, formatEvidenceDateTime } from "@/lib/utils";
 import { History, Filter, AlertTriangle, ShieldCheck } from "lucide-react";
 
 const sources = ["CDR", "IPDR", "Banking", "Social", "Identity", "Report"] as const;
@@ -134,7 +134,7 @@ export default function TimelinePage() {
                   />
                   <div className="rounded-xl border border-border-soft bg-bg-raised p-4">
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-mono text-[11px] text-text-faint">{ev.timestamp}</span>
+                      <span className="font-mono text-[11px] text-text-faint">{formatEvidenceDateTime(ev.timestamp)}</span>
                       <div className="flex items-center gap-1.5">
                         <SourceTag source={ev.source} />
                         {ev.severity === "high" && <Badge tone="red">High signal</Badge>}

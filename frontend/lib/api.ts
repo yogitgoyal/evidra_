@@ -380,7 +380,7 @@ export function getStory(caseId: string): Promise<{
 
 export function getFinancial(
   caseId: string
-): Promise<FinancialFlowResponse & { flows?: Array<Record<string, string | number>> }> {
+): Promise<FinancialFlowResponse> {
   return request(`/cases/${caseId}/financial`);
 }
 

@@ -911,8 +911,23 @@ class DataStore:
             nodes_by_id.setdefault(sender_id, FinancialFlowNode(id=sender_id, label=row.sender))
             nodes_by_id.setdefault(recipient_id, FinancialFlowNode(id=recipient_id, label=row.recipient))
             evidence_id = self._evidence_id(row.id)
-            links.append(FinancialFlowLink(source=sender_id, target=recipient_id, value=int(row.amount), evidenceIds=[evidence_id]))
-            flows.append({"from": row.sender, "to": row.recipient, "amount": float(row.amount), "channel": row.channel, "evidenceId": evidence_id})
+            links.append(
+                FinancialFlowLink(
+                    source=sender_id,
+                    target=recipient_id,
+                    value=int(row.amount),
+                    evidenceIds=[evidence_id],
+                    timestamp=row.timestamp.isoformat(),
+                )
+            )
+            flows.append({
+                "from": row.sender,
+                "to": row.recipient,
+                "amount": float(row.amount),
+                "channel": row.channel,
+                "timestamp": row.timestamp.isoformat(),
+                "evidenceId": evidence_id,
+            })
         return {
             "flows": flows,
             "nodes": list(nodes_by_id.values()),

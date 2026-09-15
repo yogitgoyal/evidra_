@@ -117,9 +117,20 @@ export interface FinancialFlowLink {
   target: string;
   value: number;
   evidenceIds: string[];
+  timestamp: string;
+}
+
+export interface FinancialFlowTransaction extends Record<string, string | number> {
+  from: string;
+  to: string;
+  amount: number;
+  channel: string;
+  timestamp: string;
+  evidenceId: string;
 }
 
 export interface FinancialFlowResponse {
   nodes: FinancialFlowNode[];
   links: FinancialFlowLink[];
+  flows?: FinancialFlowTransaction[];
 }

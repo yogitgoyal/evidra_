@@ -117,6 +117,7 @@ class FinancialFlowLink(BaseModel):
     target: str
     value: int
     evidenceIds: list[str]
+    timestamp: str
 
 class FinancialFlowResponse(BaseModel):
     nodes: list[FinancialFlowNode]

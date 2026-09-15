@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { FilePicker } from "@/components/ui/FilePicker";
 import { Toast, useToast } from "@/components/ui/Toast";
+import { formatEvidenceDateTime } from "@/lib/utils";
 
 export default function CaseSocialPage() {
   const params = useParams();
@@ -243,7 +244,10 @@ export default function CaseSocialPage() {
               <span className="text-text">
                 {r.actor} → {r.target}
               </span>
-              <span className="text-text-faint">{r.platform} ({r.interaction})</span>
+              <span className="flex items-center gap-3 text-xs text-text-faint">
+                <span>{r.platform} ({r.interaction})</span>
+                <span>{formatEvidenceDateTime(r.timestamp)}</span>
+              </span>
             </div>
           ))}
           {records.length === 0 && (

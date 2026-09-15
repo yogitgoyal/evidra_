@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { createIdentity, IdentityRecord, listIdentity } from "@/lib/api";
+import { formatEvidenceDateTime } from "@/lib/utils";
 
 export default function IdentityPage() {
   const caseId = useParams()?.id as string;
@@ -32,6 +33,11 @@ export default function IdentityPage() {
     <h2 className="mb-3 text-sm font-semibold text-text-faint uppercase tracking-wide">
       Records ({records.length})
     </h2>
-    <div className="space-y-2">{records.map((r) => <div key={r.id} className="rounded-lg border border-border-soft bg-surface px-4 py-3 text-sm text-text">{r.subject} · {r.document_type} · {r.document_hash}</div>)}</div>
+    <div className="space-y-2">{records.map((r) => (
+      <div key={r.id} className="flex items-center justify-between rounded-lg border border-border-soft bg-surface px-4 py-3 text-sm">
+        <span className="text-text">{r.subject} · {r.document_type} · {r.document_hash}</span>
+        <span className="text-xs text-text-faint">{formatEvidenceDateTime(r.timestamp)}</span>
+      </div>
+    ))}</div>
   </div>;
 }

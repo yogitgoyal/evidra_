@@ -12,6 +12,7 @@ import {
 } from "@/lib/api";
 import { FilePicker } from "@/components/ui/FilePicker";
 import { Toast, useToast } from "@/components/ui/Toast";
+import { formatEvidenceDateTime } from "@/lib/utils";
 
 export default function IpdrPage() {
   const caseId = useParams()?.id as string;
@@ -166,8 +167,16 @@ export default function IpdrPage() {
       </h2>
       <div className="space-y-2">
         {records.map((r) => (
-          <div key={r.id} className="rounded-lg border border-border-soft bg-surface px-4 py-3 text-sm text-text">
-            {r.source_ip} → {r.destination_ip} ({r.protocol})
+          <div
+            key={r.id}
+            className="flex items-center justify-between rounded-lg border border-border-soft bg-surface px-4 py-3 text-sm"
+          >
+            <span className="text-text">
+              {r.source_ip} → {r.destination_ip} ({r.protocol})
+            </span>
+            <span className="text-xs text-text-faint">
+              {formatEvidenceDateTime(r.timestamp)}
+            </span>
           </div>
         ))}
         {records.length === 0 && (

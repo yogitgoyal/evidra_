@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { FilePicker } from "@/components/ui/FilePicker";
 import { Toast, useToast } from "@/components/ui/Toast";
+import { formatEvidenceDateTime } from "@/lib/utils";
 
 export default function CaseBankingPage() {
   const params = useParams();
@@ -244,7 +245,10 @@ export default function CaseBankingPage() {
               <span className="text-text">
                 {r.sender} → {r.recipient}
               </span>
-              <span className="text-text-faint">₹{r.amount} ({r.channel})</span>
+              <span className="flex items-center gap-3 text-xs text-text-faint">
+                <span>₹{r.amount} ({r.channel})</span>
+                <span>{formatEvidenceDateTime(r.timestamp)}</span>
+              </span>
             </div>
           ))}
           {records.length === 0 && (

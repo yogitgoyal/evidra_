@@ -56,7 +56,7 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8 px-6 py-8 lg:px-8">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-8 px-6 py-8 lg:px-8">
       <div>
         <h1 className="text-xl font-semibold text-text">FIR / Report Ingestion</h1>
         <p className="mt-1 text-sm text-text-faint">
@@ -91,11 +91,11 @@ export default function ReportsPage() {
       </form>
 
       <div className="space-y-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-text-faint">
+        <h2 className="mb-3 text-sm font-semibold text-text-faint uppercase tracking-wide">
           Submitted reports ({reports.length})
         </h2>
         {reports.map((report) => (
-          <article key={report.id} className="space-y-4 rounded-xl border border-border-soft bg-surface p-5">
+          <article key={report.id} className="space-y-4 rounded-xl border border-border-soft bg-surface p-6">
             <p className="whitespace-pre-wrap text-sm text-text">{report.raw_text}</p>
             <div>
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-faint">

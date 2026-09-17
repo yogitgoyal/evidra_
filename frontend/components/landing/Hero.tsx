@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowRight, ShieldCheck, Sparkles } from "lucide-react";
-import { Button, Badge } from "@/components/ui/primitives";
+import { ArrowRight, ShieldCheck } from "lucide-react";
+import { Button } from "@/components/ui/primitives";
 import { Cite } from "@/components/evidence/Cite";
 import { HeroGraph } from "./HeroGraph";
 
@@ -12,16 +12,6 @@ export function Hero() {
     <section className="bg-command bg-noise relative overflow-hidden border-b border-border-soft">
       <div className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-10 px-6 pb-20 pt-16 lg:grid-cols-[1.05fr_0.95fr] lg:gap-6 lg:px-8 lg:pb-28 lg:pt-24">
         <div className="relative z-10">
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-          >
-            <Badge tone="cyan" className="mb-6">
-              <Sparkles size={11} /> Problem Statement 6 — Multi-Source Investigative Analytics
-            </Badge>
-          </motion.div>
-
           <motion.h1
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}

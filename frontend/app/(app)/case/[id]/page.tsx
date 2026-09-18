@@ -110,6 +110,12 @@ export default function CaseOverviewPage() {
       {/* Case Header */}
       {error && <div role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       <CaseHeader c={caseData} />
+      {realCase?.investigation_mode === "evidence" && (realCase.evidence_types?.length ?? 0) > 1 && (
+        <div className="rounded-xl border border-border-soft bg-surface px-4 py-3 text-sm text-text-dim">
+          <span className="font-semibold text-text">Expected evidence:</span>{" "}
+          {realCase.evidence_types?.join(", ")}
+        </div>
+      )}
 
       <div className="flex justify-end">
         <button

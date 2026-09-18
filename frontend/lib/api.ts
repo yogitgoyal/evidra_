@@ -67,8 +67,10 @@ export interface CaseCreatePayload {
   investigation_mode?: "entity" | "evidence" | "event";
   seed_type?: "phone" | "bank_account" | "social_handle";
   seed_value?: string;
-  evidence_type?: "CDR" | "IPDR" | "Banking" | "Social" | "Identity";
+  evidence_type?: "CDR" | "IPDR" | "Banking" | "Social" | "Identity" | "Report";
+  evidence_types?: ("CDR" | "IPDR" | "Banking" | "Social" | "Identity" | "Report")[];
   incident_date?: string;
+  incident_end_date?: string;
   event_description?: string;
   priority?: "critical" | "high" | "medium" | "low";
 }
@@ -92,7 +94,9 @@ export interface CaseApiResponse {
   seed_type?: string;
   seed_value?: string;
   evidence_type?: string;
+  evidence_types?: string[];
   incident_date?: string;
+  incident_end_date?: string;
   event_description?: string;
 }
 

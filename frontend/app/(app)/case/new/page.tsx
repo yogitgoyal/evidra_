@@ -13,8 +13,9 @@ export default function NewCasePage() {
   const [mode, setMode] = useState<"entity" | "evidence" | "event">("entity");
   const [seedType, setSeedType] = useState<"phone" | "bank_account" | "social_handle">("phone");
   const [seedValue, setSeedValue] = useState("");
-  const [evidenceType, setEvidenceType] = useState<"CDR" | "IPDR" | "Banking" | "Social" | "Identity">("CDR");
+  const [evidenceTypes, setEvidenceTypes] = useState<string[]>(["CDR"]);
   const [incidentDate, setIncidentDate] = useState("");
+  const [incidentEndDate, setIncidentEndDate] = useState("");
   const [eventDescription, setEventDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,11 +37,16 @@ export default function NewCasePage() {
         investigation_mode: mode,
         seed_type: mode === "entity" ? seedType : undefined,
         seed_value: mode === "entity" ? seedValue.trim() : undefined,
-        evidence_type: mode === "evidence" ? evidenceType : undefined,
+        evidence_type: mode === "evidence" ? evidenceTypes[0] as "CDR" : undefined,
+        evidence_types: mode === "evidence" ? evidenceTypes as never : undefined,
         incident_date: mode === "event" ? incidentDate : undefined,
+        incident_end_date: mode === "event" ? incidentEndDate : undefined,
         event_description: mode === "event" ? eventDescription.trim() || undefined : undefined,
       });
-      router.push(`/case/${created.id}`);
+      if (mode === "evidence" && evidenceTypes.length === 1) {
+        const destination = { CDR: "data", IPDR: "ipdr", Banking: "banking", Social: "social", Identity: "identity", Report: "reports" }[evidenceTypes[0]];
+        router.push(`/case/${created.id}/${destination}`);
+      } else router.push(`/case/${created.id}`);
     } catch (err) {
       setError("Failed to create case. Check that the backend is running.");
       setLoading(false);
@@ -84,8 +90,8 @@ export default function NewCasePage() {
           </select>
         </div>
         {mode === "entity" && <div className="grid gap-3 sm:grid-cols-2"><select value={seedType} onChange={(e) => setSeedType(e.target.value as typeof seedType)} className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text"><option value="phone">Phone</option><option value="bank_account">Bank Account</option><option value="social_handle">Social Handle</option></select><input value={seedValue} onChange={(e) => setSeedValue(e.target.value)} placeholder="Known identifier" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /></div>}
-        {mode === "evidence" && <select value={evidenceType} onChange={(e) => setEvidenceType(e.target.value as typeof evidenceType)} className="w-full rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text"><option>CDR</option><option>IPDR</option><option>Banking</option><option>Social</option><option>Identity</option></select>}
-        {mode === "event" && <div className="grid gap-3 sm:grid-cols-2"><input type="date" value={incidentDate} onChange={(e) => setIncidentDate(e.target.value)} className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input value={eventDescription} onChange={(e) => setEventDescription(e.target.value)} placeholder="Brief event description" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /></div>}
+        {mode === "evidence" && <div className="grid gap-2 sm:grid-cols-3">{["CDR", "IPDR", "Banking", "Social", "Identity", "Report"].map((type) => <label key={type} className="flex items-center gap-2 rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text"><input type="checkbox" checked={evidenceTypes.includes(type)} onChange={() => setEvidenceTypes((current) => current.includes(type) ? current.filter((item) => item !== type) : [...current, type])} />{type}</label>)}</div>}
+        {mode === "event" && <div className="grid gap-3 sm:grid-cols-3"><input type="date" value={incidentDate} onChange={(e) => setIncidentDate(e.target.value)} className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input type="date" value={incidentEndDate} onChange={(e) => setIncidentEndDate(e.target.value)} className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input value={eventDescription} onChange={(e) => setEventDescription(e.target.value)} placeholder="Brief event description" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /></div>}
         {error && <p className="text-sm text-red-500">{error}</p>}
         <button
           type="submit"

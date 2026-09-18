@@ -22,8 +22,9 @@ export function StartInvestigation() {
   const [priority, setPriority] = useState<"high" | "medium" | "low">("medium");
   const [value, setValue] = useState("");
   const [seedType, setSeedType] = useState<"phone" | "bank_account" | "social_handle">("phone");
-  const [evidenceType, setEvidenceType] = useState<"CDR" | "IPDR" | "Banking" | "Social" | "Identity">("CDR");
+  const [evidenceTypes, setEvidenceTypes] = useState<string[]>(["CDR"]);
   const [incidentDate, setIncidentDate] = useState("");
+  const [incidentEndDate, setIncidentEndDate] = useState("");
   const [eventDescription, setEventDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -38,6 +39,10 @@ export function StartInvestigation() {
       setError("Case name is required.");
       return;
     }
+    if (active === "event" && (!incidentDate || !incidentEndDate)) {
+      setError("Incident start and end dates are required.");
+      return;
+    }
     setLoading(true);
     try {
       const created = await createCase({
@@ -48,11 +53,18 @@ export function StartInvestigation() {
         investigation_mode: active,
         seed_type: active === "entity" ? seedType : undefined,
         seed_value: active === "entity" ? value.trim() : undefined,
-        evidence_type: active === "evidence" ? evidenceType : undefined,
+        evidence_type: active === "evidence" ? evidenceTypes[0] as "CDR" : undefined,
+        evidence_types: active === "evidence" ? evidenceTypes as never : undefined,
         incident_date: active === "event" ? incidentDate : undefined,
+        incident_end_date: active === "event" ? incidentEndDate : undefined,
         event_description: active === "event" ? eventDescription.trim() || undefined : undefined,
       });
-      router.push(`/case/${created.id}`);
+      if (active === "evidence" && evidenceTypes.length === 1) {
+        const destination = { CDR: "data", IPDR: "ipdr", Banking: "banking", Social: "social", Identity: "identity", Report: "reports" }[evidenceTypes[0]];
+        router.push(`/case/${created.id}/${destination}`);
+      } else {
+        router.push(`/case/${created.id}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create investigation.");
       setLoading(false);
@@ -148,8 +160,8 @@ export function StartInvestigation() {
             <label className="mb-2 mt-3 block text-xs font-medium text-text-faint">{current.helper}</label>
             <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
               {active === "entity" && <><select value={seedType} onChange={(e) => setSeedType(e.target.value as typeof seedType)} className="rounded-xl border border-border bg-surface-2 px-3.5 py-2.5 text-sm text-text outline-none focus:border-cyan/60"><option value="phone">Phone</option><option value="bank_account">Bank Account</option><option value="social_handle">Social Handle</option></select><div className="relative w-full sm:flex-1"><Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-text-faint" /><input value={value} onChange={(e) => setValue(e.target.value)} placeholder={current.placeholder} className="w-full rounded-xl border border-border bg-surface-2 py-2.5 pl-10 pr-3.5 text-sm text-text placeholder:text-text-faint outline-none transition-colors focus:border-cyan/60 focus:ring-2 focus:ring-cyan/15" /></div></>}
-              {active === "evidence" && <select value={evidenceType} onChange={(e) => setEvidenceType(e.target.value as typeof evidenceType)} className="w-full rounded-xl border border-border bg-surface-2 px-3.5 py-2.5 text-sm text-text outline-none focus:border-cyan/60"><option>CDR</option><option>IPDR</option><option>Banking</option><option>Social</option><option>Identity</option></select>}
-              {active === "event" && <><input type="date" value={incidentDate} onChange={(e) => setIncidentDate(e.target.value)} className="rounded-xl border border-border bg-surface-2 px-3.5 py-2.5 text-sm text-text outline-none focus:border-cyan/60" /><input value={eventDescription} onChange={(e) => setEventDescription(e.target.value)} placeholder="Brief event description" className="w-full rounded-xl border border-border bg-surface-2 px-3.5 py-2.5 text-sm text-text placeholder:text-text-faint outline-none focus:border-cyan/60" /></>}
+              {active === "evidence" && <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3">{["CDR", "IPDR", "Banking", "Social", "Identity", "Report"].map((type) => <label key={type} className="flex items-center gap-2 rounded-lg border border-border-soft bg-surface-2 px-3 py-2 text-xs text-text"><input type="checkbox" checked={evidenceTypes.includes(type)} onChange={() => setEvidenceTypes((current) => current.includes(type) ? current.filter((item) => item !== type) : [...current, type])} />{type}</label>)}</div>}
+              {active === "event" && <><input type="date" value={incidentDate} onChange={(e) => setIncidentDate(e.target.value)} className="rounded-xl border border-border bg-surface-2 px-3.5 py-2.5 text-sm text-text outline-none focus:border-cyan/60" /><input type="date" value={incidentEndDate} onChange={(e) => setIncidentEndDate(e.target.value)} className="rounded-xl border border-border bg-surface-2 px-3.5 py-2.5 text-sm text-text outline-none focus:border-cyan/60" /><input value={eventDescription} onChange={(e) => setEventDescription(e.target.value)} placeholder="Brief event description" className="w-full rounded-xl border border-border bg-surface-2 py-2.5 px-3.5 text-sm text-text placeholder:text-text-faint outline-none focus:border-cyan/60" /></>}
               <Button type="submit" disabled={loading} className="shrink-0 rounded-xl px-5">
                 {loading ? "Opening…" : "Investigate"} <ArrowRight size={15} />
               </Button>

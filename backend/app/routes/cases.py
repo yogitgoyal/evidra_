@@ -23,7 +23,9 @@ class CaseCreate(BaseModel):
     seed_type: str | None = None
     seed_value: str | None = None
     evidence_type: str | None = None
+    evidence_types: list[str] = []
     incident_date: date | None = None
+    incident_end_date: date | None = None
     event_description: str | None = None
     status: str = "active"
     priority: str = "medium"
@@ -53,7 +55,9 @@ async def create_case(payload: CaseCreate, db: AsyncSession = Depends(get_db)) -
         seed_type=payload.seed_type,
         seed_value=payload.seed_value,
         evidence_type=payload.evidence_type,
+        evidence_types=payload.evidence_types or ([payload.evidence_type] if payload.evidence_type else []),
         incident_date=payload.incident_date,
+        incident_end_date=payload.incident_end_date,
         event_description=payload.event_description,
         status=payload.status,
         priority=payload.priority,
@@ -67,7 +71,7 @@ async def create_case(payload: CaseCreate, db: AsyncSession = Depends(get_db)) -
         await db.rollback()
         raise
     await db.refresh(case)
-    return _serialize(case, {})
+    return _serialize(case, await _counts(db, case.id))
 
 
 @router.get("/cases", response_model=list[CaseRead])
@@ -91,6 +95,9 @@ async def _counts(db: AsyncSession, case_id: str) -> dict[str, int]:
     for key, model in (("cdr", CdrRecord), ("ipdr", IpdrRecord), ("banking", BankingRecord), ("social", SocialRecord), ("evidence", EvidenceRecordRow)):
         counts[key] = int(await db.scalar(select(func.count()).select_from(model).where(model.case_id == case_id)) or 0)
     counts["entities"] = counts["cdr"] * 2 + counts["ipdr"] * 2 + counts["social"] * 2 + counts["banking"] * 2
+    case = await db.get(Case, case_id)
+    if case and case.investigation_mode == "entity" and case.seed_value:
+        counts["entities"] += 1
     counts["alerts"] = int(counts["banking"] > 0) + int(counts["evidence"] > 0)
     return counts
 
@@ -133,6 +140,11 @@ async def _counts_for_cases(db: AsyncSession, case_ids: list[str]) -> dict[str, 
             + case_counts["social"] * 2
             + case_counts["banking"] * 2
         )
+    cases_by_id = {case.id: case for case in await db.scalars(select(Case).where(Case.id.in_(case_ids)))}
+    for case_id, case_counts in counts.items():
+        case = cases_by_id[case_id]
+        if case.investigation_mode == "entity" and case.seed_value:
+            case_counts["entities"] += 1
         case_counts["alerts"] = int(case_counts["banking"] > 0) + int(case_counts["evidence"] > 0)
     return counts
 
@@ -143,7 +155,8 @@ def _serialize(case: Case, counts: dict[str, int]) -> dict:
         "case_type": case.case_type, "description": case.description,
         "investigation_mode": case.investigation_mode, "seed_type": case.seed_type,
         "seed_value": case.seed_value, "evidence_type": case.evidence_type,
-        "incident_date": case.incident_date, "event_description": case.event_description,
+        "evidence_types": case.evidence_types or [], "incident_date": case.incident_date,
+        "incident_end_date": case.incident_end_date, "event_description": case.event_description,
         "opened": case.created_at.date().isoformat(), "status": case.status, "priority": case.priority,
         "lead": case.lead, "tags": case.tags or [], "entities": counts.get("entities", 0),
         "alerts": counts.get("alerts", 0), "riskScore": min(100, counts.get("alerts", 0) * 20),

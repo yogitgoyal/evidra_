@@ -12,7 +12,7 @@ import { TimelineSparkline } from "@/components/timeline/TimelineSparkline";
 import { cn, formatEvidenceDateTime } from "@/lib/utils";
 import { History, Filter, AlertTriangle, ShieldCheck } from "lucide-react";
 
-const sources = ["CDR", "IPDR", "Banking", "Social", "Identity", "Report"] as const;
+const sources = ["CDR", "IPDR", "Banking", "Social", "Identity", "Report", "Event"] as const;
 const severityDot: Record<string, string> = {
   high: "bg-red",
   watch: "bg-amber",

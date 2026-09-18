@@ -99,7 +99,7 @@ CORS_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
         "EVIDRA_CORS_ORIGINS",
-        "http://localhost:3000,http://127.0.0.1:3000",
+        "http://localhost:3000,http://127.0.0.1:3000,https://evidra-wheat.vercel.app",
     ).split(",")
     if origin.strip()
 ]

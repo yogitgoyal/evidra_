@@ -593,13 +593,16 @@ class DataStore:
 
     async def graph_for_case(self, case_id: str, db: AsyncSession | None = None) -> GraphResponse:
         if db:
+            case = await db.get(Case, case_id)
             cdr = list(await db.scalars(select(CdrRecord).where(CdrRecord.case_id == case_id)))
             ipdr = list(await db.scalars(select(IpdrRecord).where(IpdrRecord.case_id == case_id)))
             banking = list(await db.scalars(select(BankingRecord).where(BankingRecord.case_id == case_id)))
             social = list(await db.scalars(select(SocialRecord).where(SocialRecord.case_id == case_id)))
             identity_rows = list(await db.scalars(select(IdentityRecord).where(IdentityRecord.case_id == case_id)))
             reports = list(await db.scalars(select(ReportRecord).where(ReportRecord.case_id == case_id)))
-            if cdr or ipdr or social or banking or identity_rows or reports:
+            if cdr or ipdr or social or banking or identity_rows or reports or (
+                case and case.investigation_mode == "entity" and case.seed_value
+            ):
                 provenance_rows = cdr + ipdr + banking + social + identity_rows
                 evidence_ids = await self._ensure_provenance(db, case_id, provenance_rows, "graph_edge")
                 entities = {}
@@ -628,6 +631,16 @@ class DataStore:
                     entities.setdefault(canonical_id, Entity(id=canonical_id, type=entity_type, label=label, risk=0, confidence="high", tags=[]))
                     entity_keys[canonical_id] = (entity_type, normalized_value)
                     return canonical_id
+
+                if case and case.investigation_mode == "entity" and case.seed_value:
+                    seed_entity_type = {
+                        "phone": "phone",
+                        "bank_account": "account",
+                        "social_handle": "social",
+                        "ip": "ip",
+                    }.get(case.seed_type or "phone", "phone")
+                    seed_entity_id = add_entity(seed_entity_type, case.seed_value)
+                    entities[seed_entity_id].tags = ["Starting point"]
 
                 for row in cdr:
                     caller_id = add_entity("phone", row.caller)
@@ -762,6 +775,7 @@ class DataStore:
         offset: int = 0,
     ) -> list[TimelineEvent]:
         if db:
+            case = await db.get(Case, case_id)
             cdr = list(await db.scalars(select(CdrRecord).where(CdrRecord.case_id == case_id)))
             banking = list(await db.scalars(select(BankingRecord).where(BankingRecord.case_id == case_id)))
             social = list(await db.scalars(select(SocialRecord).where(SocialRecord.case_id == case_id)))
@@ -836,14 +850,35 @@ class DataStore:
                         ruleTriggered=evidence_rules.get(row.id),
                         severity=severity,
                     ))
+                if case and case.investigation_mode == "event" and case.incident_date and case.event_description:
+                    events.append(self._seed_event_for_case(case))
                 ordered_events = sorted(events, key=lambda event: (event.timestamp, event.id))
                 return ordered_events[offset:offset + min(limit, TIMELINE_MAX_EVENTS)]
+            if case and case.investigation_mode == "event" and case.incident_date and case.event_description:
+                return [self._seed_event_for_case(case)][offset:offset + min(limit, TIMELINE_MAX_EVENTS)]
         case_ids = {case.id for case in self.cases}
         ordered_events = sorted(
             (t for t in self.timeline if case_id in case_ids),
             key=lambda event: (event.timestamp, event.id),
         )
         return ordered_events[offset:offset + min(limit, TIMELINE_MAX_EVENTS)]
+
+    @staticmethod
+    def _seed_event_for_case(case: Case) -> TimelineEvent:
+        start = case.incident_date.isoformat()
+        end = (case.incident_end_date or case.incident_date).isoformat()
+        window = start if start == end else f"{start} to {end}"
+        return TimelineEvent(
+            id=f"seed_event:{case.id}",
+            timestamp=f"{start}T00:00:00",
+            title="Investigation starting incident",
+            type=None,
+            description=f"{case.event_description} (incident window: {window})",
+            source="Event",
+            entityIds=[],
+            evidenceIds=[],
+            severity="info",
+        )
 
     def evidence_by_id_lookup(self, evidence_id: str) -> EvidenceRecord | None:
         return self.evidence_by_id.get(evidence_id)

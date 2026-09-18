@@ -6,6 +6,8 @@ import { Cite } from "@/components/evidence/Cite";
 import { StoryClaim } from "@/lib/types";
 import { Sparkles } from "lucide-react";
 
+const citationTextPattern = /\s*\[[A-Za-z0-9_.-]+\]/g;
+
 export function StoryMode({ claims, title = "Investigation Story" }: { claims: StoryClaim[]; title?: string }) {
   return (
     <Card initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="p-6">
@@ -23,25 +25,20 @@ export function StoryMode({ claims, title = "Investigation Story" }: { claims: S
         cites the exact evidence record, confidence, and detection rule that produced it.
       </p>
 
-      <div className="space-y-3">
-        {claims.map((c, i) => (
-          <motion.div
-            key={c.id}
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: i * 0.08, duration: 0.4 }}
-            className="rounded-xl border border-border-soft bg-bg-raised p-4"
-          >
-            <p className="text-[13.5px] leading-relaxed text-text">
-              {c.text} <Cite ids={c.evidenceIds} chipKey={c.id} />
-            </p>
-            <div className="mt-2.5 flex items-center gap-2 font-mono text-[10.5px] text-text-faint">
-              <span className="rounded border border-cyan/20 bg-cyan-dim px-1.5 py-0.5 text-cyan">{c.rule}</span>
-              <span>confidence {typeof c.confidence === "number" ? c.confidence.toFixed(2) : c.confidence}</span>
-            </div>
-          </motion.div>
+      <motion.p
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="text-[13.5px] leading-relaxed text-text"
+      >
+        {claims.map((claim, index) => (
+          <span key={claim.id}>
+            {index > 0 ? " " : ""}
+            {claim.text.replace(citationTextPattern, "")}{" "}
+            <Cite ids={claim.evidenceIds} chipKey={claim.id} />
+          </span>
         ))}
-      </div>
+      </motion.p>
     </Card>
   );
 }

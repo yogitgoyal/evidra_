@@ -288,8 +288,27 @@ class DataStore:
         }
 
     @staticmethod
+    def _split_story_sentences(text: str) -> list[str]:
+        parts = [
+            part.strip()
+            for part in re.split(
+                r"(?<=[!?])\s+|(?<=\.)\s+(?=(?:[A-Z][a-z]|[A-Z0-9]|$))",
+                text.strip(),
+            )
+            if part.strip()
+        ]
+        sentences = []
+        abbreviations = ("Mr.", "Mrs.", "Ms.", "Dr.", "Prof.", "Rs.", "No.", "FIR No.")
+        for part in parts:
+            if sentences and sentences[-1].endswith(abbreviations):
+                sentences[-1] = f"{sentences[-1]} {part}"
+            else:
+                sentences.append(part)
+        return sentences
+
+    @staticmethod
     def _validate_narrative(narrative: str, valid_ids: set[str]) -> dict:
-        sentences = [part.strip() for part in re.split(r"(?<![A-Z\.])(?<=[.!?])\s+", narrative.strip()) if part.strip()]
+        sentences = DataStore._split_story_sentences(narrative)
         citation_pattern = re.compile(r"\[([A-Za-z0-9_.-]+)\]")
         uncited = []
         claims = []
@@ -318,8 +337,12 @@ class DataStore:
         if not api_key:
             return None, "deterministic-evidence-bundle"
         prompt = (
-            "Only narrate the given evidence. Cite one or more exact evidence_id values "
-            "in square brackets per sentence. Do not add facts.\n\n"
+            "Write an investigator-style narrative from only the supplied evidence. Connect "
+            "facts that form a relationship arc with restrained temporal or investigative "
+            "framing (for example, a call followed by a transfer), but do not add facts, "
+            "names, amounts, dates, or causal claims that are not present. Every sentence "
+            "must contain one or more exact evidence_id values in square brackets, and the "
+            "narrative must cite every supplied evidence_id at least once.\n\n"
             + json.dumps(bundle, sort_keys=True)
         )
         payload = json.dumps({
@@ -345,6 +368,101 @@ class DataStore:
             return text.strip(), "openai"
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as error:
             return None, f"llm-error-fallback:{type(error).__name__}"
+
+    @staticmethod
+    def _story_participants(item: dict) -> set[str]:
+        fields = item["fields"]
+        if "caller" in fields:
+            return {fields["caller"], fields["callee"]}
+        if "sourceIp" in fields:
+            return {fields["sourceIp"], fields["destinationIp"]}
+        if "sender" in fields:
+            return {fields["sender"], fields["recipient"]}
+        if "actor" in fields:
+            return {fields["actor"], fields["target"]}
+        if item["record_type"] == "identity":
+            return {fields["subject"]}
+        return set()
+
+    @classmethod
+    def _story_transition(cls, previous: dict | None, current: dict, index: int) -> str:
+        if index == 0 or previous is None:
+            return ""
+        previous_type = previous["record_type"]
+        current_type = current["record_type"]
+        shared_participant = bool(cls._story_participants(previous) & cls._story_participants(current))
+        if previous_type == "cdr" and current_type == "banking" and shared_participant:
+            return "Following this call, "
+        if previous_type == "banking" and current_type == "banking" and shared_participant:
+            return "The financial trail then shows "
+        if previous_type == "cdr" and current_type == "ipdr" and shared_participant:
+            return "The related network activity then shows "
+        if shared_participant:
+            return "This connection is followed by "
+        return {
+            "cdr": "The call record then shows ",
+            "ipdr": "The network evidence adds another link: ",
+            "banking": "The financial evidence adds another movement: ",
+            "identity": "The identity record adds context: ",
+            "social": "The communications record adds context: ",
+            "report": "The case record adds context: ",
+        }.get(current_type, "The evidence then shows ")
+
+    @classmethod
+    def _story_fact_sentence(cls, item: dict, previous: dict | None, index: int) -> str:
+        fields = item["fields"]
+        transition = cls._story_transition(previous, item, index)
+        if "caller" in fields:
+            text = f"{fields['caller']} called {fields['callee']} for {fields['durationSeconds']} seconds"
+        elif "sourceIp" in fields:
+            text = f"Network traffic connected {fields['sourceIp']} to {fields['destinationIp']} using {fields['protocol']}"
+        elif "sender" in fields:
+            text = f"{fields['sender']} transferred {fields['amount']:.2f} to {fields['recipient']} via {fields['channel']}"
+            if previous and previous["record_type"] == "cdr" and cls._story_participants(previous) & cls._story_participants(item):
+                text += ", a sequence consistent with a call preceding a transfer"
+        elif item["record_type"] == "identity":
+            text = f"{fields['subject']} submitted a {fields['documentType']} identity record"
+        elif item["record_type"] == "report":
+            return (fields.get("rawText") or "").strip()
+        else:
+            text = f"{fields['actor']} created a {fields['interaction']} relationship with {fields['target']} on {fields['platform']}"
+        return f"{transition}{text}"
+
+    @staticmethod
+    def _story_fact_key(item: dict) -> tuple:
+        fields = item["fields"]
+        record_type = item["record_type"]
+        if record_type == "cdr":
+            return record_type, fields["caller"], fields["callee"], fields["durationSeconds"]
+        if record_type == "ipdr":
+            return record_type, fields["sourceIp"], fields["destinationIp"], fields["protocol"]
+        if record_type == "banking":
+            return record_type, fields["sender"], fields["recipient"], fields["amount"], fields["channel"]
+        if record_type == "identity":
+            return record_type, fields["subject"], fields["documentType"], fields["documentHash"]
+        if record_type == "social":
+            return record_type, fields["actor"], fields["target"], fields["platform"], fields["interaction"]
+        return record_type, fields["rawText"], json.dumps(fields["extractedEntities"], sort_keys=True)
+
+    @classmethod
+    def _deduplicate_story_bundle(cls, bundle: list[dict]) -> list[dict]:
+        groups: dict[tuple, dict] = {}
+        for item in bundle:
+            key = cls._story_fact_key(item)
+            group = groups.get(key)
+            if group is None:
+                groups[key] = {**item, "evidence_ids": [item["evidence_id"]]}
+                continue
+            group["evidence_ids"].append(item["evidence_id"])
+            group["timestamp"] = min(group["timestamp"], item["timestamp"])
+        return sorted(
+            groups.values(),
+            key=lambda item: (
+                item["timestamp"],
+                {"cdr": 0, "banking": 1, "ipdr": 2, "social": 3, "identity": 4, "report": 5}.get(item["record_type"], 6),
+                item["evidence_ids"][0],
+            ),
+        )
 
     async def story_claims_for_case(self, case_id: str, db: AsyncSession) -> dict:
         if await db.get(Case, case_id) is None:
@@ -385,23 +503,39 @@ class DataStore:
             else:
                 raise ValueError(f"Unsupported record type in story generation: {type(row).__name__}")
             bundle.append({"evidence_id": evidence_id, "timestamp": row.timestamp.isoformat(), "fields": fields, "record_type": record_type})
+        bundle = self._deduplicate_story_bundle(bundle)
         narrative, provider = await self._llm_narrative(bundle)
+        if narrative is not None:
+            cited_ids = {
+                evidence_id
+                for sentence in self._validate_narrative(narrative, valid_ids)["claims"]
+                for evidence_id in sentence["evidenceIds"]
+            }
+            expected_ids = {
+                evidence_id
+                for item in bundle
+                for evidence_id in item["evidence_ids"]
+            }
+            if cited_ids != expected_ids:
+                narrative = None
+                provider = "llm-incomplete-fallback"
         if narrative is None:
             sentences = []
-            for item in bundle:
+            previous = None
+            for index, item in enumerate(bundle):
                 fields = item["fields"]
-                if "caller" in fields:
-                    text = f"{fields['caller']} called {fields['callee']} for {fields['durationSeconds']} seconds"
-                elif "sourceIp" in fields:
-                    text = f"Network traffic connected {fields['sourceIp']} to {fields['destinationIp']} using {fields['protocol']}"
-                elif "sender" in fields:
-                    text = f"{fields['sender']} transferred {fields['amount']:.2f} to {fields['recipient']} via {fields['channel']}"
-                elif item["record_type"] == "identity":
-                    text = f"{fields['subject']} submitted a {fields['documentType']} identity record"
-                elif item["record_type"] == "report":
+                citations = " ".join(f"[{evidence_id}]" for evidence_id in item["evidence_ids"])
+                if item["record_type"] == "report":
                     raw_text = (fields.get("rawText") or "").strip()
                     if raw_text:
-                        text = raw_text
+                        report_sentences = self._split_story_sentences(raw_text)
+                        for part in report_sentences:
+                            if part[-1:] in ".!?":
+                                sentences.append(f"{part[:-1]} {citations}{part[-1]}")
+                            else:
+                                sentences.append(f"{part} {citations}")
+                        previous = item
+                        continue
                     else:
                         extracted_entities = fields.get("extractedEntities") or []
                         entities_text = ", ".join(
@@ -411,8 +545,9 @@ class DataStore:
                         )
                         text = f"Report identified related entities: {entities_text}" if entities_text else "Report identified related entities"
                 else:
-                    text = f"{fields['actor']} created a {fields['interaction']} relationship with {fields['target']} on {fields['platform']}"
-                sentences.append(f"{text} [{item['evidence_id']}].")
+                    text = self._story_fact_sentence(item, previous, index)
+                sentences.append(f"{text} {citations}.")
+                previous = item
             narrative = " ".join(sentences)
         validated = self._validate_narrative(narrative, valid_ids)
         validated["caseId"] = case_id

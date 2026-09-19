@@ -5,7 +5,7 @@ from itertools import combinations
 import ipaddress
 from difflib import SequenceMatcher
 from app.seed import cases, active_case, entities, edges, evidence, evidence_by_id, timeline, story_claims, copilot_seed, alerts, weekly_activity
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -22,6 +22,12 @@ from app.models import FinancialFlowResponse, FinancialFlowNode, FinancialFlowLi
 from app.models import CopilotMessage, StoryClaim
 
 TIMELINE_MAX_EVENTS = 2000
+
+
+def to_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def normalize_phone(value: str) -> str:
@@ -144,7 +150,7 @@ class DataStore:
         shared_ip_count = sum(len(identities) > 1 for identities in ip_identities.values())
         high_value = [row for row in banking if float(row.amount) >= 10000]
         rapid = sum(
-            any(other.id != current.id and other.sender == current.sender and abs(other.timestamp - current.timestamp) <= timedelta(minutes=30) for other in banking)
+            any(other.id != current.id and other.sender == current.sender and abs(to_utc(other.timestamp) - to_utc(current.timestamp)) <= timedelta(minutes=30) for other in banking)
             for current in banking
         )
         social_links = {(row.actor, row.target) for row in social}
@@ -176,6 +182,7 @@ class DataStore:
         devices: dict[str, set[tuple[str, str]]] = {}
 
         def add_relationship(dataset: str, source: str, target: str, timestamp, attributes: dict) -> None:
+            timestamp = to_utc(timestamp)
             source_id = (dataset, source)
             target_id = (dataset, target)
             incoming.setdefault(target_id, set()).add(source_id)
@@ -244,7 +251,7 @@ class DataStore:
             })
 
         if social:
-            social_activity = sorted((row.timestamp, row.actor) for row in social)
+            social_activity = sorted((to_utc(row.timestamp), row.actor) for row in social)
             max_synchronized = 1
             for index, (timestamp, _) in enumerate(social_activity):
                 actors = {
@@ -446,6 +453,9 @@ class DataStore:
 
     @classmethod
     def _deduplicate_story_bundle(cls, bundle: list[dict]) -> list[dict]:
+        def timestamp_instant(item: dict) -> datetime:
+            return to_utc(datetime.fromisoformat(item["timestamp"]))
+
         groups: dict[tuple, dict] = {}
         for item in bundle:
             key = cls._story_fact_key(item)
@@ -454,11 +464,11 @@ class DataStore:
                 groups[key] = {**item, "evidence_ids": [item["evidence_id"]]}
                 continue
             group["evidence_ids"].append(item["evidence_id"])
-            group["timestamp"] = min(group["timestamp"], item["timestamp"])
+            group["timestamp"] = min(timestamp_instant(group), timestamp_instant(item)).isoformat()
         return sorted(
             groups.values(),
             key=lambda item: (
-                item["timestamp"],
+                timestamp_instant(item),
                 {"cdr": 0, "banking": 1, "ipdr": 2, "social": 3, "identity": 4, "report": 5}.get(item["record_type"], 6),
                 item["evidence_ids"][0],
             ),
@@ -477,7 +487,7 @@ class DataStore:
         evidence_ids = await self._ensure_provenance(db, case_id, rows, "story_narrative")
         valid_ids = set(evidence_ids.values())
         bundle = []
-        for row in sorted(rows, key=lambda item: item.timestamp):
+        for row in sorted(rows, key=lambda item: to_utc(item.timestamp)):
             evidence_id = evidence_ids[row.id]
             if isinstance(row, CdrRecord):
                 fields = {"caller": row.caller, "callee": row.callee, "durationSeconds": row.duration_seconds}
@@ -502,7 +512,7 @@ class DataStore:
                 record_type = "social"
             else:
                 raise ValueError(f"Unsupported record type in story generation: {type(row).__name__}")
-            bundle.append({"evidence_id": evidence_id, "timestamp": row.timestamp.isoformat(), "fields": fields, "record_type": record_type})
+            bundle.append({"evidence_id": evidence_id, "timestamp": to_utc(row.timestamp).isoformat(), "fields": fields, "record_type": record_type})
         bundle = self._deduplicate_story_bundle(bundle)
         narrative, provider = await self._llm_narrative(bundle)
         if narrative is not None:
@@ -823,7 +833,7 @@ class DataStore:
                     )
                 } if provenance_rows or reports else {}
                 calls = cdr
-                short_call_ids = {row.id for row in calls if any(other.id != row.id and abs(other.timestamp - row.timestamp) <= timedelta(minutes=30) for other in calls)}
+                short_call_ids = {row.id for row in calls if any(other.id != row.id and abs(to_utc(other.timestamp) - to_utc(row.timestamp)) <= timedelta(minutes=30) for other in calls)}
                 events = []
                 for row in rows:
                     if isinstance(row, CdrRecord):
@@ -857,7 +867,7 @@ class DataStore:
                     event_evidence_id = evidence_ids.get(row.id)
                     events.append(TimelineEvent(
                         id=row.id,
-                        timestamp=row.timestamp.isoformat(),
+                        timestamp=to_utc(row.timestamp).isoformat(),
                         title=title,
                         type=event_type,
                         description=description,
@@ -878,7 +888,7 @@ class DataStore:
         case_ids = {case.id for case in self.cases}
         ordered_events = sorted(
             (t for t in self.timeline if case_id in case_ids),
-            key=lambda event: (event.timestamp, event.id),
+            key=lambda event: (to_utc(datetime.fromisoformat(event.timestamp)), event.id),
         )
         return ordered_events[offset:offset + min(limit, TIMELINE_MAX_EVENTS)]
 
@@ -886,6 +896,11 @@ class DataStore:
     def _seed_event_for_case(case: Case) -> TimelineEvent:
         start = case.incident_date.isoformat()
         end = (case.incident_end_date or case.incident_date).isoformat()
+        event_timestamp = datetime.combine(
+            case.incident_date,
+            datetime.min.time(),
+            tzinfo=timezone(timedelta(hours=5, minutes=30)),
+        )
         window = start if start == end else f"{start} to {end}"
         description = (
             f"{case.event_description} (incident window: {window})"
@@ -894,7 +909,7 @@ class DataStore:
         )
         return TimelineEvent(
             id=f"seed_event:{case.id}",
-            timestamp=f"{start}T00:00:00",
+            timestamp=to_utc(event_timestamp).isoformat(),
             title="Investigation starting incident" if case.event_description else "Incident window",
             type=None,
             description=description,
@@ -919,10 +934,10 @@ class DataStore:
         if await db.get(Case, case_id) is None:
             raise HTTPException(status_code=404, detail="Case not found.")
         query = select(EvidenceRecordRow).where(EvidenceRecordRow.case_id == case_id)
-        if from_timestamp:
-            query = query.where(EvidenceRecordRow.timestamp >= from_timestamp)
-        if to_timestamp:
-            query = query.where(EvidenceRecordRow.timestamp < to_timestamp)
+        if from_timestamp is not None:
+            query = query.where(EvidenceRecordRow.timestamp >= to_utc(from_timestamp))
+        if to_timestamp is not None:
+            query = query.where(EvidenceRecordRow.timestamp < to_utc(to_timestamp))
         query = query.order_by(EvidenceRecordRow.timestamp.desc(), EvidenceRecordRow.id.desc()).offset(offset).limit(limit)
         rows = list(await db.scalars(query))
         return [EvidenceRecord(

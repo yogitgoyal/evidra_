@@ -7,7 +7,20 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.db import Base
 from app.models.case import Case
 from app.models.datasets import BankingRecord, CdrRecord, IpdrRecord, ReportRecord, SocialRecord
-from app.store import store
+from app.store import DataStore, store
+
+
+class StoryFakeDb:
+    def __init__(self, case, records):
+        self.case = case
+        self.records = records
+
+    async def get(self, model, case_id):
+        return self.case if model is Case and case_id == self.case.id else None
+
+    async def scalars(self, query):
+        model = query.column_descriptions[0]["entity"]
+        return [record for record in self.records if isinstance(record, model)]
 
 
 @pytest_asyncio.fixture
@@ -50,6 +63,29 @@ async def test_story_deduplicates_facts_and_covers_all_evidence(story_session):
         "ev_connection_1",
     }
     assert result["uncitedSentences"] == []
+
+
+@pytest.mark.asyncio
+async def test_story_orders_mixed_timestamps_by_true_instant(monkeypatch):
+    case_id = "mixed_story_timestamps"
+    case = Case(id=case_id, name="Mixed story timestamps", status="active", priority="medium", lead="Test", tags=[])
+    records = [
+        CdrRecord(id="naive", case_id=case_id, caller="1", callee="2", duration_seconds=1, timestamp=datetime(2026, 8, 20, 12), attributes={}),
+        CdrRecord(id="offset_later", case_id=case_id, caller="3", callee="4", duration_seconds=1, timestamp=datetime.fromisoformat("2026-08-20T18:00:00+05:30"), attributes={}),
+        CdrRecord(id="offset_earlier", case_id=case_id, caller="5", callee="6", duration_seconds=1, timestamp=datetime.fromisoformat("2026-08-20T07:00:00-04:00"), attributes={}),
+    ]
+
+    async def skip_provenance(self, db, case_id, rows, transformation):
+        return {row.id: f"ev_{row.id}" for row in rows}
+
+    monkeypatch.setattr(DataStore, "_ensure_provenance", skip_provenance)
+    result = await DataStore().story_claims_for_case(case_id, StoryFakeDb(case, records))
+
+    assert [claim["evidenceIds"][0] for claim in result["claims"]] == [
+        "ev_offset_earlier",
+        "ev_naive",
+        "ev_offset_later",
+    ]
 
 
 @pytest.mark.asyncio

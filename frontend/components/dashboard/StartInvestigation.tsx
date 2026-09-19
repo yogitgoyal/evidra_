@@ -43,6 +43,10 @@ export function StartInvestigation() {
       setError("Incident start and end dates are required.");
       return;
     }
+    if (active === "event" && incidentEndDate < incidentDate) {
+      setError("Incident end date must not be before the start date.");
+      return;
+    }
     setLoading(true);
     try {
       const created = await createCase({
@@ -55,8 +59,8 @@ export function StartInvestigation() {
         seed_value: active === "entity" ? value.trim() : undefined,
         evidence_type: active === "evidence" ? evidenceTypes[0] as "CDR" : undefined,
         evidence_types: active === "evidence" ? evidenceTypes as never : undefined,
-        incident_date: active === "event" ? incidentDate : undefined,
-        incident_end_date: active === "event" ? incidentEndDate : undefined,
+        incident_date: active === "event" ? incidentDate || undefined : undefined,
+        incident_end_date: active === "event" ? incidentEndDate || undefined : undefined,
         event_description: active === "event" ? eventDescription.trim() || undefined : undefined,
       });
       if (active === "evidence" && evidenceTypes.length === 1) {

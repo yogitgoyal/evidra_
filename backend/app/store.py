@@ -850,11 +850,11 @@ class DataStore:
                         ruleTriggered=evidence_rules.get(row.id),
                         severity=severity,
                     ))
-                if case and case.investigation_mode == "event" and case.incident_date and case.event_description:
+                if case and case.investigation_mode == "event" and case.incident_date:
                     events.append(self._seed_event_for_case(case))
                 ordered_events = sorted(events, key=lambda event: (event.timestamp, event.id))
                 return ordered_events[offset:offset + min(limit, TIMELINE_MAX_EVENTS)]
-            if case and case.investigation_mode == "event" and case.incident_date and case.event_description:
+            if case and case.investigation_mode == "event" and case.incident_date:
                 return [self._seed_event_for_case(case)][offset:offset + min(limit, TIMELINE_MAX_EVENTS)]
         case_ids = {case.id for case in self.cases}
         ordered_events = sorted(
@@ -868,12 +868,17 @@ class DataStore:
         start = case.incident_date.isoformat()
         end = (case.incident_end_date or case.incident_date).isoformat()
         window = start if start == end else f"{start} to {end}"
+        description = (
+            f"{case.event_description} (incident window: {window})"
+            if case.event_description
+            else f"Incident window: {window}"
+        )
         return TimelineEvent(
             id=f"seed_event:{case.id}",
             timestamp=f"{start}T00:00:00",
-            title="Investigation starting incident",
+            title="Investigation starting incident" if case.event_description else "Incident window",
             type=None,
-            description=f"{case.event_description} (incident window: {window})",
+            description=description,
             source="Event",
             entityIds=[],
             evidenceIds=[],

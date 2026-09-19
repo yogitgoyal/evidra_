@@ -26,6 +26,14 @@ export default function NewCasePage() {
       setError("Case name is required.");
       return;
     }
+    if (mode === "event" && (!incidentDate || !incidentEndDate)) {
+      setError("Incident start and end dates are required.");
+      return;
+    }
+    if (mode === "event" && incidentEndDate < incidentDate) {
+      setError("Incident end date must not be before the start date.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -39,8 +47,8 @@ export default function NewCasePage() {
         seed_value: mode === "entity" ? seedValue.trim() : undefined,
         evidence_type: mode === "evidence" ? evidenceTypes[0] as "CDR" : undefined,
         evidence_types: mode === "evidence" ? evidenceTypes as never : undefined,
-        incident_date: mode === "event" ? incidentDate : undefined,
-        incident_end_date: mode === "event" ? incidentEndDate : undefined,
+        incident_date: mode === "event" ? incidentDate || undefined : undefined,
+        incident_end_date: mode === "event" ? incidentEndDate || undefined : undefined,
         event_description: mode === "event" ? eventDescription.trim() || undefined : undefined,
       });
       if (mode === "evidence" && evidenceTypes.length === 1) {

@@ -200,3 +200,77 @@ async def test_person_social_edges_require_context_and_conservative_similarity(g
         {edge.source, edge.target} == {"person:rajesh kumar verma", "social:rajesh.verma"}
         for edge in graph.edges
     )
+
+
+@pytest.mark.asyncio
+async def test_entity_seed_matches_existing_entity_and_marks_neighbors(graph_session):
+    case_id = "entity_seed_match_test"
+    timestamp = datetime(2026, 8, 1, 9, tzinfo=timezone.utc)
+    graph_session.add_all([
+        Case(
+            id=case_id,
+            name="Entity seed match",
+            investigation_mode="entity",
+            seed_type="phone",
+            seed_value="+91 98765 43210",
+            status="active",
+            priority="medium",
+            lead="Test",
+            tags=[],
+        ),
+        CdrRecord(
+            id="cdr_entity_seed_match",
+            case_id=case_id,
+            caller="9876543210",
+            callee="9123456780",
+            duration_seconds=60,
+            timestamp=timestamp,
+            attributes={},
+        ),
+    ])
+    await graph_session.commit()
+
+    graph = await store.graph_for_case(case_id, graph_session)
+
+    seed_entities = [entity for entity in graph.entities if entity.id == "phone:9876543210"]
+    assert len(seed_entities) == 1
+    assert "Starting point" in seed_entities[0].tags
+    neighbor = next(entity for entity in graph.entities if entity.id == "phone:9123456780")
+    assert neighbor.hop == 1
+
+
+@pytest.mark.asyncio
+async def test_entity_seed_without_match_remains_standalone(graph_session):
+    case_id = "entity_seed_no_match_test"
+    timestamp = datetime(2026, 8, 1, 9, tzinfo=timezone.utc)
+    graph_session.add_all([
+        Case(
+            id=case_id,
+            name="Entity seed no match",
+            investigation_mode="entity",
+            seed_type="phone",
+            seed_value="9999999999",
+            status="active",
+            priority="medium",
+            lead="Test",
+            tags=[],
+        ),
+        CdrRecord(
+            id="cdr_entity_seed_no_match",
+            case_id=case_id,
+            caller="9876543210",
+            callee="9123456780",
+            duration_seconds=60,
+            timestamp=timestamp,
+            attributes={},
+        ),
+    ])
+    await graph_session.commit()
+
+    graph = await store.graph_for_case(case_id, graph_session)
+
+    seed_entities = [entity for entity in graph.entities if entity.id == "phone:9999999999"]
+    assert len(seed_entities) == 1
+    assert "Starting point" in seed_entities[0].tags
+    assert seed_entities[0].evidenceIds == []
+    assert all(entity.hop is None for entity in graph.entities if entity.id != "phone:9999999999")

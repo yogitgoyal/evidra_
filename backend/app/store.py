@@ -632,6 +632,8 @@ class DataStore:
                     entity_keys[canonical_id] = (entity_type, normalized_value)
                     return canonical_id
 
+                seed_entity_type = None
+                seed_entity_normalized = None
                 if case and case.investigation_mode == "entity" and case.seed_value:
                     seed_entity_type = {
                         "phone": "phone",
@@ -639,8 +641,7 @@ class DataStore:
                         "social_handle": "social",
                         "ip": "ip",
                     }.get(case.seed_type or "phone", "phone")
-                    seed_entity_id = add_entity(seed_entity_type, case.seed_value)
-                    entities[seed_entity_id].tags = ["Starting point"]
+                    seed_entity_normalized = normalize_entity_value(seed_entity_type, case.seed_value)
 
                 for row in cdr:
                     caller_id = add_entity("phone", row.caller)
@@ -759,6 +760,24 @@ class DataStore:
                             weight=1,
                             evidenceIds=sorted(supporting_evidence),
                         ))
+                if seed_entity_type and seed_entity_normalized is not None:
+                    seed_entity_id = next(
+                        (
+                            graph_entity_id
+                            for graph_entity_id, (entity_type, normalized_value) in entity_keys.items()
+                            if entity_type == seed_entity_type and normalized_value == seed_entity_normalized
+                        ),
+                        None,
+                    )
+                    if seed_entity_id is None:
+                        seed_entity_id = add_entity(seed_entity_type, case.seed_value)
+                    seed_entity = entities[seed_entity_id]
+                    seed_entity.tags = sorted(set(seed_entity.tags or []) | {"Starting point"})
+                    for edge in edges:
+                        if edge.source == seed_entity_id:
+                            entities[edge.target].hop = 1
+                        elif edge.target == seed_entity_id:
+                            entities[edge.source].hop = 1
                 for graph_entity_id, entity in entities.items():
                     entity.evidenceIds = sorted(entity_evidence_ids[graph_entity_id])
                 return GraphResponse(entities=list(entities.values()), edges=edges, fraudMetrics=await self.fraud_analysis(case_id, db))

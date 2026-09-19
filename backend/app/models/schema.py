@@ -22,6 +22,7 @@ class Entity(BaseModel):
     risk: int
     confidence: MatchConfidence
     tags: Optional[list[str]] = None
+    hop: Optional[int] = None
     evidenceIds: list[str] = Field(default_factory=list)
 
 class GraphEdge(BaseModel):

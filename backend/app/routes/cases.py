@@ -2,7 +2,7 @@ from datetime import date, datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import func, literal, select, update, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +14,7 @@ from app.models.datasets import BankingRecord, CdrRecord, EvidenceRecordRow, Ipd
 router = APIRouter(tags=["cases"])
 
 
-class CaseCreate(BaseModel):
+class CaseBase(BaseModel):
     name: str
     id: str | None = None
     case_type: str | None = None
@@ -23,17 +23,32 @@ class CaseCreate(BaseModel):
     seed_type: str | None = None
     seed_value: str | None = None
     evidence_type: str | None = None
-    evidence_types: list[str] = []
+    evidence_types: list[str] = Field(default_factory=list)
     incident_date: date | None = None
     incident_end_date: date | None = None
     event_description: str | None = None
     status: str = "active"
     priority: str = "medium"
     lead: str = "Unassigned"
-    tags: list[str] = []
+    tags: list[str] = Field(default_factory=list)
+
+class CaseCreate(CaseBase):
+    @model_validator(mode="after")
+    def validate_mode_fields(self) -> "CaseCreate":
+        if self.investigation_mode == "entity":
+            if not self.seed_type or not self.seed_value or not self.seed_value.strip():
+                raise ValueError("Entity-led cases require seed_type and a non-empty seed_value.")
+        elif self.investigation_mode == "event":
+            if self.incident_date is None or self.incident_end_date is None:
+                raise ValueError("Event-led cases require incident_date and incident_end_date.")
+            if self.incident_end_date < self.incident_date:
+                raise ValueError("Event-led incident_end_date must be on or after incident_date.")
+        elif self.investigation_mode == "evidence" and not self.evidence_types:
+            raise ValueError("Evidence-led cases require at least one evidence type.")
+        return self
 
 
-class CaseRead(CaseCreate):
+class CaseRead(CaseBase):
     model_config = ConfigDict(from_attributes=True)
 
     created_at: datetime

@@ -71,7 +71,13 @@ export interface CaseCreatePayload {
   evidence_types?: ("CDR" | "IPDR" | "Banking" | "Social" | "Identity" | "Report")[];
   incident_date?: string;
   incident_end_date?: string;
+  incident_start_time?: string;
+  incident_end_time?: string;
   event_description?: string;
+  event_location?: string;
+  event_lat?: number;
+  event_lng?: number;
+  event_radius_m?: number;
   priority?: "critical" | "high" | "medium" | "low";
 }
 
@@ -97,7 +103,44 @@ export interface CaseApiResponse {
   evidence_types?: string[];
   incident_date?: string;
   incident_end_date?: string;
+  incident_start_time?: string;
+  incident_end_time?: string;
   event_description?: string;
+  event_location?: string;
+  event_lat?: number;
+  event_lng?: number;
+  event_radius_m?: number;
+}
+
+export interface EventDetailsInput {
+  startTime: string;
+  endTime: string;
+  latitude: string;
+  longitude: string;
+  radius: string;
+}
+
+export function toIstTimestamp(value: string): string | undefined {
+  return value ? `${value}:00+05:30` : undefined;
+}
+
+export function validateEventDetails(details: EventDetailsInput): string | null {
+  if (details.startTime && details.endTime && Date.parse(toIstTimestamp(details.endTime)!) < Date.parse(toIstTimestamp(details.startTime)!)) {
+    return "End time must be on or after the start time.";
+  }
+  if ((details.latitude === "") !== (details.longitude === "")) {
+    return "Latitude and longitude must be provided together.";
+  }
+  if (details.latitude !== "" && (Number.isNaN(Number(details.latitude)) || Number(details.latitude) < -90 || Number(details.latitude) > 90)) {
+    return "Latitude must be between -90 and 90.";
+  }
+  if (details.longitude !== "" && (Number.isNaN(Number(details.longitude)) || Number(details.longitude) < -180 || Number(details.longitude) > 180)) {
+    return "Longitude must be between -180 and 180.";
+  }
+  if (details.radius !== "" && (Number.isNaN(Number(details.radius)) || Number(details.radius) < 0)) {
+    return "Radius must be non-negative.";
+  }
+  return null;
 }
 
 export async function createCase(payload: CaseCreatePayload): Promise<CaseApiResponse> {

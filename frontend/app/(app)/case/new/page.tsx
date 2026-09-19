@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createCase } from "@/lib/api";
+import { createCase, toIstTimestamp, validateEventDetails } from "@/lib/api";
 
 export default function NewCasePage() {
   const router = useRouter();
@@ -16,6 +16,12 @@ export default function NewCasePage() {
   const [evidenceTypes, setEvidenceTypes] = useState<string[]>(["CDR"]);
   const [incidentDate, setIncidentDate] = useState("");
   const [incidentEndDate, setIncidentEndDate] = useState("");
+  const [incidentStartTime, setIncidentStartTime] = useState("");
+  const [incidentEndTime, setIncidentEndTime] = useState("");
+  const [eventLocation, setEventLocation] = useState("");
+  const [eventLat, setEventLat] = useState("");
+  const [eventLng, setEventLng] = useState("");
+  const [eventRadius, setEventRadius] = useState("");
   const [eventDescription, setEventDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +40,13 @@ export default function NewCasePage() {
       setError("Incident end date must not be before the start date.");
       return;
     }
+    if (mode === "event") {
+      const eventError = validateEventDetails({ startTime: incidentStartTime, endTime: incidentEndTime, latitude: eventLat, longitude: eventLng, radius: eventRadius });
+      if (eventError) {
+        setError(eventError);
+        return;
+      }
+    }
     setLoading(true);
     setError(null);
     try {
@@ -49,7 +62,13 @@ export default function NewCasePage() {
         evidence_types: mode === "evidence" ? evidenceTypes as never : undefined,
         incident_date: mode === "event" ? incidentDate || undefined : undefined,
         incident_end_date: mode === "event" ? incidentEndDate || undefined : undefined,
+        incident_start_time: mode === "event" ? toIstTimestamp(incidentStartTime) : undefined,
+        incident_end_time: mode === "event" ? toIstTimestamp(incidentEndTime) : undefined,
         event_description: mode === "event" ? eventDescription.trim() || undefined : undefined,
+        event_location: mode === "event" ? eventLocation.trim() || undefined : undefined,
+        event_lat: mode === "event" && eventLat !== "" ? Number(eventLat) : undefined,
+        event_lng: mode === "event" && eventLng !== "" ? Number(eventLng) : undefined,
+        event_radius_m: mode === "event" && eventRadius !== "" ? Number(eventRadius) : undefined,
       });
       if (mode === "evidence" && evidenceTypes.length === 1) {
         const destination = { CDR: "data", IPDR: "ipdr", Banking: "banking", Social: "social", Identity: "identity", Report: "reports" }[evidenceTypes[0]];
@@ -99,7 +118,7 @@ export default function NewCasePage() {
         </div>
         {mode === "entity" && <div className="grid gap-3 sm:grid-cols-2"><select value={seedType} onChange={(e) => setSeedType(e.target.value as typeof seedType)} className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text"><option value="phone">Phone</option><option value="bank_account">Bank Account</option><option value="social_handle">Social Handle</option></select><input value={seedValue} onChange={(e) => setSeedValue(e.target.value)} placeholder="Known identifier" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /></div>}
         {mode === "evidence" && <div className="grid gap-2 sm:grid-cols-3">{["CDR", "IPDR", "Banking", "Social", "Identity", "Report"].map((type) => <label key={type} className="flex items-center gap-2 rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text"><input type="checkbox" checked={evidenceTypes.includes(type)} onChange={() => setEvidenceTypes((current) => current.includes(type) ? current.filter((item) => item !== type) : [...current, type])} />{type}</label>)}</div>}
-        {mode === "event" && <div className="grid gap-3 sm:grid-cols-3"><input type="date" value={incidentDate} onChange={(e) => setIncidentDate(e.target.value)} className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input type="date" value={incidentEndDate} onChange={(e) => setIncidentEndDate(e.target.value)} className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input value={eventDescription} onChange={(e) => setEventDescription(e.target.value)} placeholder="Brief event description" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /></div>}
+        {mode === "event" && <div className="grid gap-3 sm:grid-cols-2"><input type="date" aria-label="Incident start date" value={incidentDate} onChange={(e) => setIncidentDate(e.target.value)} className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input type="date" aria-label="Incident end date" value={incidentEndDate} onChange={(e) => setIncidentEndDate(e.target.value)} className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input type="datetime-local" aria-label="Incident start time (IST)" value={incidentStartTime} onChange={(e) => setIncidentStartTime(e.target.value)} className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input type="datetime-local" aria-label="Incident end time (IST)" value={incidentEndTime} onChange={(e) => setIncidentEndTime(e.target.value)} className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input value={eventLocation} onChange={(e) => setEventLocation(e.target.value)} placeholder="Location (optional)" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input value={eventDescription} onChange={(e) => setEventDescription(e.target.value)} placeholder="Brief event description" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input type="number" aria-label="Event latitude" value={eventLat} onChange={(e) => setEventLat(e.target.value)} placeholder="Latitude" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input type="number" aria-label="Event longitude" value={eventLng} onChange={(e) => setEventLng(e.target.value)} placeholder="Longitude" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input type="number" min="0" aria-label="Event radius in meters" value={eventRadius} onChange={(e) => setEventRadius(e.target.value)} placeholder="Radius in meters (default 1000)" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /></div>}
         {error && <p className="text-sm text-red-500">{error}</p>}
         <button
           type="submit"

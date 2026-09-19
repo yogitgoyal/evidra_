@@ -11,7 +11,8 @@ from app.db import Base
 from app.deps import get_db
 from app.main import app
 from app.models.case import Case
-from app.routes.cases import CaseCreate
+from app.routes.cases import CaseCreate, create_case
+from app.store import to_utc
 
 
 def test_entity_mode_requires_seed_fields():
@@ -55,6 +56,62 @@ def test_valid_mode_payloads_are_accepted():
         investigation_mode="evidence",
         evidence_types=["CDR"],
     )
+
+
+def test_event_time_order_is_validated():
+    with pytest.raises(ValidationError, match="end_time must be on or after"):
+        CaseCreate(
+            name="Event case",
+            investigation_mode="event",
+            incident_date=date(2026, 8, 1),
+            incident_end_date=date(2026, 8, 2),
+            incident_start_time=datetime.fromisoformat("2026-08-02T12:00:00+05:30"),
+            incident_end_time=datetime.fromisoformat("2026-08-02T11:00:00+05:30"),
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("event_lat", 91, "event_lat must be between"),
+        ("event_lng", 181, "event_lng must be between"),
+        ("event_radius_m", -1, "event_radius_m must be non-negative"),
+    ],
+)
+def test_event_location_values_are_validated(field, value, message):
+    values = {"event_lat": 30.7, "event_lng": 76.7, "event_radius_m": 100}
+    values[field] = value
+    with pytest.raises(ValidationError, match=message):
+        CaseCreate(
+            name="Event case",
+            investigation_mode="event",
+            incident_date=date(2026, 8, 1),
+            incident_end_date=date(2026, 8, 2),
+            **values,
+        )
+
+
+def test_event_coordinates_must_be_provided_together():
+    with pytest.raises(ValidationError, match="provided together"):
+        CaseCreate(
+            name="Event case",
+            investigation_mode="event",
+            incident_date=date(2026, 8, 1),
+            incident_end_date=date(2026, 8, 2),
+            event_lat=30.7,
+        )
+
+
+def test_event_coordinates_default_radius():
+    payload = CaseCreate(
+        name="Event case",
+        investigation_mode="event",
+        incident_date=date(2026, 8, 1),
+        incident_end_date=date(2026, 8, 2),
+        event_lat=30.7,
+        event_lng=76.7,
+    )
+    assert payload.event_radius_m == 1000
 
 
 @pytest_asyncio.fixture
@@ -126,5 +183,30 @@ async def test_case_reads_accept_legacy_mode_fields(legacy_cases_session):
                 response = await client.get(f"/cases/{case_id}", headers=headers)
                 assert response.status_code == 200
                 assert response.json()["id"] == case_id
+                assert response.json()["incident_start_time"] is None
+                assert response.json()["incident_end_time"] is None
+                assert response.json()["event_location"] is None
+                assert response.json()["event_lat"] is None
+                assert response.json()["event_lng"] is None
+                assert response.json()["event_radius_m"] is None
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.mark.asyncio
+async def test_event_times_are_saved_as_utc(legacy_cases_session):
+    payload = CaseCreate(
+        name="Timed event case",
+        investigation_mode="event",
+        incident_date=date(2026, 8, 1),
+        incident_end_date=date(2026, 8, 2),
+        incident_start_time=datetime.fromisoformat("2026-08-01T12:00:00+05:30"),
+        incident_end_time=datetime.fromisoformat("2026-08-01T14:00:00+05:30"),
+        event_lat=30.7,
+        event_lng=76.7,
+    )
+    case = await create_case(payload, legacy_cases_session)
+
+    assert to_utc(case["incident_start_time"]) == datetime(2026, 8, 1, 6, 30, tzinfo=timezone.utc)
+    assert to_utc(case["incident_end_time"]) == datetime(2026, 8, 1, 8, 30, tzinfo=timezone.utc)
+    assert case["event_radius_m"] == 1000

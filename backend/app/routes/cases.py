@@ -10,6 +10,7 @@ from app.deps import get_db
 from app.models.audit import AuditLogEntry
 from app.models.case import Case
 from app.models.datasets import BankingRecord, CdrRecord, EvidenceRecordRow, IpdrRecord, SocialRecord
+from app.store import to_utc
 
 router = APIRouter(tags=["cases"])
 
@@ -26,7 +27,13 @@ class CaseBase(BaseModel):
     evidence_types: list[str] = Field(default_factory=list)
     incident_date: date | None = None
     incident_end_date: date | None = None
+    incident_start_time: datetime | None = None
+    incident_end_time: datetime | None = None
     event_description: str | None = None
+    event_location: str | None = None
+    event_lat: float | None = None
+    event_lng: float | None = None
+    event_radius_m: float | None = None
     status: str = "active"
     priority: str = "medium"
     lead: str = "Unassigned"
@@ -43,6 +50,19 @@ class CaseCreate(CaseBase):
                 raise ValueError("Event-led cases require incident_date and incident_end_date.")
             if self.incident_end_date < self.incident_date:
                 raise ValueError("Event-led incident_end_date must be on or after incident_date.")
+            if self.incident_start_time and self.incident_end_time:
+                if to_utc(self.incident_end_time) < to_utc(self.incident_start_time):
+                    raise ValueError("Event-led incident_end_time must be on or after incident_start_time.")
+            if (self.event_lat is None) != (self.event_lng is None):
+                raise ValueError("Event-led event_lat and event_lng must be provided together.")
+            if self.event_lat is not None and not -90 <= self.event_lat <= 90:
+                raise ValueError("Event-led event_lat must be between -90 and 90.")
+            if self.event_lng is not None and not -180 <= self.event_lng <= 180:
+                raise ValueError("Event-led event_lng must be between -180 and 180.")
+            if self.event_radius_m is not None and self.event_radius_m < 0:
+                raise ValueError("Event-led event_radius_m must be non-negative.")
+            if self.event_lat is not None and self.event_radius_m is None:
+                self.event_radius_m = 1000
         elif self.investigation_mode == "evidence" and not self.evidence_types:
             raise ValueError("Evidence-led cases require at least one evidence type.")
         return self
@@ -73,7 +93,13 @@ async def create_case(payload: CaseCreate, db: AsyncSession = Depends(get_db)) -
         evidence_types=payload.evidence_types or ([payload.evidence_type] if payload.evidence_type else []),
         incident_date=payload.incident_date,
         incident_end_date=payload.incident_end_date,
+        incident_start_time=to_utc(payload.incident_start_time) if payload.incident_start_time else None,
+        incident_end_time=to_utc(payload.incident_end_time) if payload.incident_end_time else None,
         event_description=payload.event_description,
+        event_location=payload.event_location,
+        event_lat=payload.event_lat,
+        event_lng=payload.event_lng,
+        event_radius_m=payload.event_radius_m,
         status=payload.status,
         priority=payload.priority,
         lead=payload.lead,
@@ -171,7 +197,10 @@ def _serialize(case: Case, counts: dict[str, int]) -> dict:
         "investigation_mode": case.investigation_mode, "seed_type": case.seed_type,
         "seed_value": case.seed_value, "evidence_type": case.evidence_type,
         "evidence_types": case.evidence_types or [], "incident_date": case.incident_date,
-        "incident_end_date": case.incident_end_date, "event_description": case.event_description,
+        "incident_end_date": case.incident_end_date, "incident_start_time": case.incident_start_time,
+        "incident_end_time": case.incident_end_time, "event_description": case.event_description,
+        "event_location": case.event_location, "event_lat": case.event_lat,
+        "event_lng": case.event_lng, "event_radius_m": case.event_radius_m,
         "opened": case.created_at.date().isoformat(), "status": case.status, "priority": case.priority,
         "lead": case.lead, "tags": case.tags or [], "entities": counts.get("entities", 0),
         "alerts": counts.get("alerts", 0), "riskScore": min(100, counts.get("alerts", 0) * 20),

@@ -76,6 +76,19 @@ export interface TimelineEvent {
   confidence?: MatchConfidence;
   ruleTriggered?: string;
   severity: "critical" | "high" | "watch" | "info" | "medium" | "low";
+  in_event_window?: boolean;
+  in_event_location?: boolean | null;
+}
+
+export interface EventWindowActivity {
+  entityId: string;
+  label: string;
+  count: number;
+  score: number;
+  locationMatches: number;
+  countsBySource: Record<string, number>;
+  evidenceIds: string[];
+  reason: string;
 }
 
 export interface StoryClaim {

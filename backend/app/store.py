@@ -12,6 +12,7 @@ import os
 import re
 import urllib.error
 import urllib.request
+from math import asin, cos, radians, sin, sqrt
 from fastapi import HTTPException
 from app.models import GraphResponse, TimelineEvent, EvidenceRecord, Entity, GraphEdge
 from app.models.case import Case
@@ -22,12 +23,56 @@ from app.models import FinancialFlowResponse, FinancialFlowNode, FinancialFlowLi
 from app.models import CopilotMessage, StoryClaim
 
 TIMELINE_MAX_EVENTS = 2000
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 def to_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+
+def event_window(case: Case) -> tuple[datetime, datetime] | None:
+    if case.investigation_mode != "event" or not case.incident_date:
+        return None
+    start = (
+        to_utc(case.incident_start_time)
+        if case.incident_start_time
+        else datetime.combine(case.incident_date, datetime.min.time(), tzinfo=IST).astimezone(timezone.utc)
+    )
+    end = (
+        to_utc(case.incident_end_time)
+        if case.incident_end_time
+        else datetime.combine(
+            case.incident_end_date or case.incident_date,
+            datetime.min.time(),
+            tzinfo=IST,
+        ).astimezone(timezone.utc) + timedelta(days=1)
+    )
+    return start, end
+
+
+def in_event_window(case: Case, timestamp: datetime) -> bool:
+    window = event_window(case)
+    if window is None:
+        return False
+    start, end = window
+    return start <= to_utc(timestamp) < end
+
+
+def cdr_location_match(case: Case, row: CdrRecord) -> bool | None:
+    if case.event_lat is None or case.event_lng is None:
+        return None
+    try:
+        latitude = float((row.attributes or {}).get("latitude"))
+        longitude = float((row.attributes or {}).get("longitude"))
+    except (TypeError, ValueError):
+        return None
+    latitude_delta = radians(latitude - case.event_lat)
+    longitude_delta = radians(longitude - case.event_lng)
+    haversine = sin(latitude_delta / 2) ** 2 + cos(radians(case.event_lat)) * cos(radians(latitude)) * sin(longitude_delta / 2) ** 2
+    distance_m = 6_371_000 * 2 * asin(sqrt(haversine))
+    return distance_m <= (case.event_radius_m if case.event_radius_m is not None else 1000)
 
 
 def normalize_phone(value: str) -> str:
@@ -878,6 +923,8 @@ class DataStore:
                         confidence=None,
                         ruleTriggered=evidence_rules.get(row.id),
                         severity=severity,
+                        in_event_window=in_event_window(case, row.timestamp) if case else False,
+                        in_event_location=cdr_location_match(case, row) if case and isinstance(row, CdrRecord) else None,
                     ))
                 if case and case.investigation_mode == "event" and case.incident_date:
                     events.append(self._seed_event_for_case(case))
@@ -917,6 +964,7 @@ class DataStore:
             entityIds=[],
             evidenceIds=[],
             severity="info",
+            in_event_window=in_event_window(case, event_timestamp),
         )
 
     def evidence_by_id_lookup(self, evidence_id: str) -> EvidenceRecord | None:
@@ -951,17 +999,80 @@ class DataStore:
         if case is None:
             raise HTTPException(status_code=404, detail="Case not found.")
         dataset_rows = []
-        for model in (CdrRecord, IpdrRecord, BankingRecord, SocialRecord):
+        for model in (CdrRecord, IpdrRecord, BankingRecord, SocialRecord, IdentityRecord, ReportRecord):
             dataset_rows.extend(list(await db.scalars(select(model).where(model.case_id == case_id))))
         if dataset_rows:
             await self._ensure_provenance(db, case_id, dataset_rows, "overview")
         evidence_count = await db.scalar(select(func.count()).select_from(EvidenceRecordRow).where(EvidenceRecordRow.case_id == case_id)) or 0
         metrics = await self.fraud_analysis(case_id, db)
+        event_window_activity = []
+        window = event_window(case)
+        if window:
+            evidence_rows = list(await db.scalars(
+                select(EvidenceRecordRow).where(EvidenceRecordRow.case_id == case_id)
+            ))
+            evidence_ids = {row.source_record_id: row.id for row in evidence_rows}
+            activity: dict[str, dict] = {}
+            for row in dataset_rows:
+                if not in_event_window(case, row.timestamp):
+                    continue
+                if isinstance(row, CdrRecord):
+                    participants = [("phone", row.caller), ("phone", row.callee)]
+                    source = "CDR"
+                    location_match = cdr_location_match(case, row)
+                elif isinstance(row, IpdrRecord):
+                    participants = [("ip", row.source_ip), ("ip", row.destination_ip)]
+                    source, location_match = "IPDR", None
+                elif isinstance(row, BankingRecord):
+                    participants = [("account", row.sender), ("account", row.recipient)]
+                    source, location_match = "Banking", None
+                elif isinstance(row, SocialRecord):
+                    participants = [("social", row.actor), ("social", row.target)]
+                    source, location_match = "Social", None
+                elif isinstance(row, IdentityRecord):
+                    participants = [("person", row.subject)]
+                    source, location_match = "Identity", None
+                else:
+                    participants = [
+                        (str(item.get("type", "entity")), str(item["value"]))
+                        for item in (row.extracted_entities or [])
+                        if item.get("value")
+                    ]
+                    source, location_match = "Report", None
+                for entity_type, value in participants:
+                    graph_id, normalized = entity_id(entity_type, value)
+                    item = activity.setdefault(graph_id, {
+                        "entityId": graph_id,
+                        "label": value,
+                        "count": 0,
+                        "locationMatches": 0,
+                        "countsBySource": {},
+                        "evidenceIds": [],
+                        "lastTimestamp": row.timestamp,
+                    })
+                    item["count"] += 1
+                    item["countsBySource"][source] = item["countsBySource"].get(source, 0) + 1
+                    if location_match is True:
+                        item["locationMatches"] += 1
+                    evidence_id = evidence_ids.get(row.id)
+                    if evidence_id and evidence_id not in item["evidenceIds"]:
+                        item["evidenceIds"].append(evidence_id)
+            for item in activity.values():
+                item["score"] = item["count"] + item["locationMatches"]
+                source, count = max(item["countsBySource"].items(), key=lambda pair: pair[1])
+                timestamp = to_utc(item.pop("lastTimestamp")).strftime("%H:%M")
+                location_note = " and at the event location" if item["locationMatches"] else ""
+                item["reason"] = f"{source} transaction at {timestamp}, inside the window{location_note}."
+            event_window_activity = sorted(
+                activity.values(),
+                key=lambda item: (-item["score"], -item["count"], item["entityId"]),
+            )[:10]
         return {
             "caseId": case_id,
             "suspects": metrics["suspiciousEntitiesCount"],
             "evidenceCount": evidence_count,
             "anomalies": metrics["anomalyEventsCount"],
+            "event_window_activity": event_window_activity,
         }
 
     async def dashboard_for_user(self, db: AsyncSession | None = None) -> dict:

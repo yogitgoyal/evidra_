@@ -3,10 +3,10 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getCase, deleteCase, CaseApiResponse, getGraph, getTimeline, getStory, getRiskFactors, getEvidence, RiskFactor } from "@/lib/api";
+import { getCase, deleteCase, CaseApiResponse, getGraph, getTimeline, getStory, getRiskFactors, getEvidence, getOverview, RiskFactor } from "@/lib/api";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import type { Entity, StoryClaim, TimelineEvent } from "@/lib/types";
+import type { Entity, StoryClaim, TimelineEvent, EventWindowActivity } from "@/lib/types";
 import { CaseHeader } from "@/components/case/CaseHeader";
 import { StoryMode } from "@/components/case/StoryMode";
 import { RiskRadarChart } from "@/components/case/RiskRadarChart";
@@ -45,6 +45,7 @@ export default function CaseOverviewPage() {
   const [caseClaims, setCaseClaims] = useState<StoryClaim[]>([]);
   const [evidenceCount, setEvidenceCount] = useState(0);
   const [riskFactors, setRiskFactors] = useState<RiskFactor[]>([]);
+  const [eventWindowActivity, setEventWindowActivity] = useState<EventWindowActivity[]>([]);
   const [riskFactorsLoading, setRiskFactorsLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -52,8 +53,8 @@ export default function CaseOverviewPage() {
     if (!caseId) return;
     setError("");
     setRiskFactorsLoading(true);
-    Promise.all([getCase(caseId), getGraph(caseId), getTimeline(caseId), getStory(caseId), getRiskFactors(caseId), getEvidence(caseId)])
-      .then(([nextCase, graph, nextTimeline, story, nextRiskFactors, evidence]) => {
+    Promise.all([getCase(caseId), getGraph(caseId), getTimeline(caseId), getStory(caseId), getRiskFactors(caseId), getEvidence(caseId), getOverview(caseId)])
+      .then(([nextCase, graph, nextTimeline, story, nextRiskFactors, evidence, overview]) => {
         setRealCase(nextCase);
         setCaseEntities(graph.entities);
         setCaseEdges(graph.edges);
@@ -61,6 +62,7 @@ export default function CaseOverviewPage() {
         setCaseClaims(story.claims);
         setRiskFactors(nextRiskFactors.riskFactors);
         setEvidenceCount(evidence.evidence.length);
+        setEventWindowActivity(overview.event_window_activity ?? []);
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setRiskFactorsLoading(false));
@@ -163,6 +165,23 @@ export default function CaseOverviewPage() {
         </div>
 
         <div className="space-y-6">
+          {eventWindowActivity.length > 0 && (
+            <Card initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className="p-6">
+              <SectionLabel className="mb-4">Most active in window</SectionLabel>
+              <div className="space-y-3">
+                {eventWindowActivity.map((item) => (
+                  <div key={item.entityId} className="rounded-lg border border-border-soft bg-surface-2 p-3">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="truncate font-medium text-text">{item.label}</span>
+                      <span className="font-mono text-cyan">{item.count}</span>
+                    </div>
+                    <div className="mt-1 text-[10.5px] leading-relaxed text-text-faint">{item.reason}</div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           <Card initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.1 }} className="p-6">
             <SectionLabel className="mb-4">Highest-risk entities</SectionLabel>
             <div className="space-y-1">

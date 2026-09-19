@@ -59,6 +59,8 @@ class TimelineEvent(BaseModel):
     confidence: Optional[MatchConfidence] = None
     ruleTriggered: Optional[str] = None
     severity: TimelineSeverity
+    in_event_window: bool = False
+    in_event_location: Optional[bool] = None
 
 class StoryClaim(BaseModel):
     id: str

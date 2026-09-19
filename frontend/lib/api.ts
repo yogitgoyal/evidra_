@@ -7,6 +7,7 @@ import type {
   Entity,
   StoryClaim,
   TimelineEvent,
+  EventWindowActivity,
 } from "./types";
 
 export const API_BASE =
@@ -415,6 +416,18 @@ export function getRiskFactors(caseId: string): Promise<{ riskFactors: RiskFacto
 
 export function getTimeline(caseId: string): Promise<TimelineEvent[]> {
   return request(`/cases/${caseId}/timeline`);
+}
+
+export interface CaseOverviewResponse {
+  caseId: string;
+  suspects: number;
+  evidenceCount: number;
+  anomalies: number;
+  event_window_activity: EventWindowActivity[];
+}
+
+export function getOverview(caseId: string): Promise<CaseOverviewResponse> {
+  return request(`/cases/${caseId}/overview`);
 }
 
 export function getStory(caseId: string): Promise<{

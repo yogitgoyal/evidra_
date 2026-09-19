@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { getTimeline } from "@/lib/api";
+import { getCase, getTimeline, CaseApiResponse } from "@/lib/api";
 import { Entity, TimelineEvent } from "@/lib/types";
 import { Card, Badge, SectionLabel, SourceTag } from "@/components/ui/primitives";
 import { Cite } from "@/components/evidence/Cite";
@@ -23,23 +23,37 @@ export default function TimelinePage() {
   const params = useParams();
   const caseId = params?.id as string;
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
+  const [caseData, setCaseData] = useState<CaseApiResponse | null>(null);
   const [entities] = useState<Entity[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [activeSources, setActiveSources] = useState<Set<string>>(new Set(sources));
+  const [eventWindowOnly, setEventWindowOnly] = useState(true);
 
   useEffect(() => {
     if (!caseId) return;
-    getTimeline(caseId)
-      .then(setTimeline)
+    Promise.all([getTimeline(caseId), getCase(caseId)])
+      .then(([nextTimeline, nextCase]) => {
+        setTimeline(nextTimeline);
+        setCaseData(nextCase);
+      })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
   }, [caseId]);
 
-  const filtered = useMemo(
+  const isEventCase = caseData?.investigation_mode === "event";
+  const sourceFiltered = useMemo(
     () => timeline.filter((t) => activeSources.has(t.source)),
     [activeSources, timeline]
   );
+  const filtered = useMemo(
+    () => sourceFiltered.filter((t) => !eventWindowOnly || !isEventCase || t.in_event_window),
+    [eventWindowOnly, isEventCase, sourceFiltered]
+  );
+  const outsideCount = sourceFiltered.filter((t) => !t.in_event_window).length;
+  const eventWindowLabel = caseData?.incident_date
+    ? `${caseData.incident_start_time ?? `${caseData.incident_date}T00:00:00+05:30`} to ${caseData.incident_end_time ?? `${caseData.incident_end_date ?? caseData.incident_date}T23:59:59+05:30`}`
+    : null;
 
   const highSignalCount = useMemo(
     () => filtered.filter((t) => t.severity === "high").length,
@@ -76,6 +90,7 @@ export default function TimelinePage() {
           <p className="mt-1 text-sm text-text-dim">
             Cross-source events reconstructed into a single, time-ordered account of activity.
           </p>
+          {isEventCase && eventWindowLabel && <p className="mt-1 text-xs text-cyan">Event window: {eventWindowLabel}</p>}
         </div>
         <div className="flex items-center gap-1.5">
           <Filter size={12} className="mr-0.5 text-text-faint" />
@@ -96,12 +111,18 @@ export default function TimelinePage() {
           ))}
         </div>
       </div>
+      {isEventCase && (
+        <label className="flex w-fit items-center gap-2 rounded-lg border border-border-soft bg-surface px-3 py-2 text-xs text-text-dim">
+          <input type="checkbox" checked={eventWindowOnly} onChange={(e) => setEventWindowOnly(e.target.checked)} />
+          Event window only
+        </label>
+      )}
 
       {/* Task 4: Interactive Activity Intensity Heatmap Sparkline */}
       {loading ? (
         <Card className="p-6 text-sm text-text-faint">Loading timeline events...</Card>
       ) : (
-        <TimelineSparkline timeline={timeline} onSelectEvent={handleSelectEvent} />
+        <TimelineSparkline timeline={filtered} onSelectEvent={handleSelectEvent} />
       )}
 
       {/* Main 12-Column Responsive Layout Split */}
@@ -132,11 +153,12 @@ export default function TimelinePage() {
                     )}
                     style={{ boxShadow: ev.severity === "high" ? "0 0 12px rgba(239,98,98,0.6)" : undefined }}
                   />
-                  <div className="rounded-xl border border-border-soft bg-bg-raised p-4">
+                  <div className={cn("rounded-xl border p-4", ev.in_event_window ? "border-cyan/50 bg-cyan/5" : "border-border-soft bg-bg-raised")}>
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                       <span className="font-mono text-[11px] text-text-faint">{formatEvidenceDateTime(ev.timestamp)}</span>
                       <div className="flex items-center gap-1.5">
                         <SourceTag source={ev.source} />
+                        {ev.in_event_location !== null && ev.in_event_location !== undefined && <Badge tone={ev.in_event_location ? "green" : "amber"}>{ev.in_event_location ? "Location match" : "Outside location"}</Badge>}
                         {ev.severity === "high" && <Badge tone="red">High signal</Badge>}
                         {ev.severity === "watch" && <Badge tone="amber">Watch</Badge>}
                       </div>
@@ -165,7 +187,7 @@ export default function TimelinePage() {
               ))}
               {!loading && filtered.length === 0 && (
                 <div className="rounded-xl border border-dashed border-border-soft p-8 text-center text-sm text-text-faint">
-                  No timeline events for this case.
+                  {isEventCase && eventWindowOnly ? `No records inside the window — showing ${outsideCount} outside.` : "No timeline events for this case."}
                 </div>
               )}
             </div>
@@ -226,6 +248,7 @@ export default function TimelinePage() {
           <div className="rounded-xl border border-dashed border-border-soft p-4 text-[11px] leading-relaxed text-text-faint">
             <SectionLabel className="mb-1.5">Reading this timeline</SectionLabel>
             Sequence reflects source timestamps only — proximity in time is an investigative lead, never proof of intent or causation.
+            {isEventCase && <div className="mt-2">Location matching currently uses CDR coordinates only.</div>}
           </div>
         </div>
       </div>

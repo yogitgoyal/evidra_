@@ -23,6 +23,15 @@ class FakeDb:
         model = query.column_descriptions[0]["entity"]
         return [record for record in self.records if isinstance(record, model)]
 
+    async def scalar(self, query):
+        return sum(isinstance(record, EvidenceRecordRow) for record in self.records)
+
+    def add(self, record):
+        self.records.append(record)
+
+    async def commit(self):
+        return None
+
 
 @pytest.fixture
 def case():
@@ -199,3 +208,99 @@ async def test_fallback_timeline_sorts_mixed_timestamp_strings(case):
     events = await data_store.timeline_for_case(case.id)
 
     assert [event.id for event in events] == ["offset-earlier", "naive", "offset-later"]
+
+
+@pytest.mark.asyncio
+async def test_event_timeline_marks_time_window_and_location(case):
+    case.investigation_mode = "event"
+    case.incident_start_time = datetime.fromisoformat("2026-08-20T12:00:00+00:00")
+    case.incident_end_time = datetime.fromisoformat("2026-08-20T13:00:00+00:00")
+    case.event_lat = 30.7
+    case.event_lng = 76.7
+    records = [
+        CdrRecord(id="inside", case_id=case.id, caller="1", callee="2", timestamp=datetime(2026, 8, 20, 12, 30), attributes={"latitude": 30.7, "longitude": 76.7}),
+        CdrRecord(id="outside", case_id=case.id, caller="3", callee="4", timestamp=datetime(2026, 8, 20, 13, 30), attributes={"latitude": 30.7, "longitude": 76.7}),
+        BankingRecord(id="bank", case_id=case.id, sender="a", recipient="b", amount=10, channel="UPI", timestamp=datetime(2026, 8, 20, 12, 30), attributes={}),
+    ]
+
+    async def skip_provenance(self, db, case_id, rows, transformation):
+        return {row.id: f"ev_{row.id}" for row in rows}
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(DataStore, "_ensure_provenance", skip_provenance)
+    try:
+        events = await DataStore().timeline_for_case(case.id, FakeDb(case, records))
+    finally:
+        monkeypatch.undo()
+
+    result = {event.id: event for event in events}
+    assert result["inside"].in_event_window is True
+    assert result["inside"].in_event_location is True
+    assert result["outside"].in_event_window is False
+    assert result["outside"].in_event_location is True
+    assert result["bank"].in_event_window is True
+    assert result["bank"].in_event_location is None
+
+
+@pytest.mark.asyncio
+async def test_event_window_defaults_to_single_ist_day_without_times(case):
+    case.investigation_mode = "event"
+    records = [
+        CdrRecord(id="same-day", case_id=case.id, caller="1", callee="2", timestamp=datetime.fromisoformat("2026-08-20T18:29:59+00:00"), attributes={}),
+        CdrRecord(id="next-day", case_id=case.id, caller="3", callee="4", timestamp=datetime.fromisoformat("2026-08-20T18:30:00+00:00"), attributes={}),
+    ]
+
+    async def skip_provenance(self, db, case_id, rows, transformation):
+        return {row.id: f"ev_{row.id}" for row in rows}
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(DataStore, "_ensure_provenance", skip_provenance)
+    try:
+        events = await DataStore().timeline_for_case(case.id, FakeDb(case, records))
+    finally:
+        monkeypatch.undo()
+
+    result = {event.id: event for event in events}
+    assert result["same-day"].in_event_window is True
+    assert result["next-day"].in_event_window is False
+
+
+@pytest.mark.asyncio
+async def test_overview_ranks_window_activity_with_reasons_and_provenance(case):
+    case.investigation_mode = "event"
+    records = [
+        CdrRecord(id="cdr", case_id=case.id, caller="111", callee="222", timestamp=datetime(2026, 8, 20, 12), attributes={"latitude": 30.7, "longitude": 76.7}),
+        BankingRecord(id="bank", case_id=case.id, sender="111", recipient="acct", amount=100, channel="UPI", timestamp=datetime(2026, 8, 20, 12, 1), attributes={}),
+        EvidenceRecordRow(id="ev_cdr", case_id=case.id, source="CDR", source_record_id="cdr", rule="test", transformation="test", content_hash="a", fields={}, timestamp=datetime(2026, 8, 20, 12)),
+        EvidenceRecordRow(id="ev_bank", case_id=case.id, source="Banking", source_record_id="bank", rule="test", transformation="test", content_hash="b", fields={}, timestamp=datetime(2026, 8, 20, 12, 1)),
+    ]
+    case.event_lat = 30.7
+    case.event_lng = 76.7
+
+    async def skip_provenance(self, db, case_id, rows, transformation):
+        return {row.id: f"ev_{row.id}" for row in rows}
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(DataStore, "_ensure_provenance", skip_provenance)
+    try:
+        overview = await DataStore().overview_for_case(case.id, FakeDb(case, records))
+    finally:
+        monkeypatch.undo()
+
+    activity = overview["event_window_activity"]
+    assert activity
+    assert {item["label"] for item in activity} >= {"111", "222", "acct"}
+    phone_activity = next(item for item in activity if item["label"] == "111" and "CDR" in item["countsBySource"])
+    assert phone_activity["countsBySource"] == {"CDR": 1}
+    assert phone_activity["evidenceIds"] == ["ev_cdr"]
+    assert "inside the window" in phone_activity["reason"]
+
+
+@pytest.mark.asyncio
+async def test_non_event_timeline_keeps_event_metadata_inert(case):
+    case.investigation_mode = "entity"
+    records = [CdrRecord(id="cdr", case_id=case.id, caller="1", callee="2", timestamp=datetime(2026, 8, 20, 12), attributes={"latitude": 30.7, "longitude": 76.7})]
+    events = await DataStore().timeline_for_case(case.id, FakeDb(case, records))
+
+    assert events[0].in_event_window is False
+    assert events[0].in_event_location is None

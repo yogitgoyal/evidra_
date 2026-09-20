@@ -655,9 +655,7 @@ class DataStore:
             social = list(await db.scalars(select(SocialRecord).where(SocialRecord.case_id == case_id)))
             identity_rows = list(await db.scalars(select(IdentityRecord).where(IdentityRecord.case_id == case_id)))
             reports = list(await db.scalars(select(ReportRecord).where(ReportRecord.case_id == case_id)))
-            if cdr or ipdr or social or banking or identity_rows or reports or (
-                case and case.investigation_mode == "entity" and case.seed_value
-            ):
+            if cdr or ipdr or social or banking or identity_rows or reports or (case and case.seed_value):
                 provenance_rows = cdr + ipdr + banking + social + identity_rows
                 evidence_ids = await self._ensure_provenance(db, case_id, provenance_rows, "graph_edge")
                 entities = {}
@@ -689,7 +687,7 @@ class DataStore:
 
                 seed_entity_type = None
                 seed_entity_normalized = None
-                if case and case.investigation_mode == "entity" and case.seed_value:
+                if case and case.seed_value:
                     seed_entity_type = {
                         "phone": "phone",
                         "bank_account": "account",

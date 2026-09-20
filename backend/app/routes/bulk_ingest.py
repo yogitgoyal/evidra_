@@ -185,6 +185,11 @@ async def upload_banking_bulk(
             amount = float(row["amount"])
             if amount < 0:
                 raise ValueError("amount must be non-negative")
+            attributes = {
+                key: row[key].strip()
+                for key in ("transaction_id", "upi_ref", "upi_reference")
+                if row.get(key, "").strip()
+            }
             records.append(BankingRecord(
                 id=str(uuid4()),
                 case_id=case_id,
@@ -194,7 +199,7 @@ async def upload_banking_bulk(
                 amount=amount,
                 channel=row.get("channel") or "UPI",
                 timestamp=_timestamp(row.get("timestamp")),
-                attributes={},
+                attributes=attributes,
             ))
         except (TypeError, ValueError, OverflowError) as error:
             rejected.append({"row": line_number, "reason": str(error)})

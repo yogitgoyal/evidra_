@@ -18,6 +18,8 @@ class Case(Base):
     seed_value: Mapped[str | None] = mapped_column(String(255), nullable=True)
     evidence_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     evidence_types: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    clue_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    clue_value: Mapped[str | None] = mapped_column(String(255), nullable=True)
     incident_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     incident_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     incident_start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -1,4 +1,6 @@
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+import ipaddress
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,6 +13,7 @@ from app.models.audit import AuditLogEntry
 from app.models.case import Case
 from app.models.datasets import BankingRecord, CdrRecord, EvidenceRecordRow, IpdrRecord, SocialRecord
 from app.store import to_utc
+from app.candidates import CandidateError, confirm_candidate, discover_candidates
 
 router = APIRouter(tags=["cases"])
 
@@ -25,6 +28,8 @@ class CaseBase(BaseModel):
     seed_value: str | None = None
     evidence_type: str | None = None
     evidence_types: list[str] = Field(default_factory=list)
+    clue_type: str | None = None
+    clue_value: str | None = None
     incident_date: date | None = None
     incident_end_date: date | None = None
     incident_start_time: datetime | None = None
@@ -63,8 +68,42 @@ class CaseCreate(CaseBase):
                 raise ValueError("Event-led event_radius_m must be non-negative.")
             if self.event_lat is not None and self.event_radius_m is None:
                 self.event_radius_m = 1000
-        elif self.investigation_mode == "evidence" and not self.evidence_types:
-            raise ValueError("Evidence-led cases require at least one evidence type.")
+        elif self.investigation_mode == "evidence":
+            if (self.clue_type is None) != (self.clue_value is None):
+                raise ValueError("Evidence-led clue_type and clue_value must be provided together.")
+            if not self.evidence_types and self.clue_type is None:
+                raise ValueError("Evidence-led cases require a clue or at least one evidence type.")
+            if self.clue_type is not None:
+                if self.clue_type not in {"transaction_id", "upi_ref", "phone", "ip", "amount_time"}:
+                    raise ValueError("Unsupported evidence clue_type.")
+                value = (self.clue_value or "").strip()
+                if not value:
+                    raise ValueError("Evidence clue_value must not be empty.")
+                if self.clue_type == "phone" and (not value.isdigit() or len(value) < 7):
+                    raise ValueError("Phone clue_value must contain digits only and be at least 7 digits.")
+                if self.clue_type == "ip":
+                    try:
+                        ipaddress.ip_address(value)
+                    except ValueError as error:
+                        raise ValueError("IP clue_value must be a valid IPv4 or IPv6 address.") from error
+                if self.clue_type in {"transaction_id", "upi_ref"} and not value:
+                    raise ValueError("Identifier clue_value must not be empty.")
+                if self.clue_type == "amount_time":
+                    parts = value.split("|", 1)
+                    if len(parts) != 2:
+                        raise ValueError("amount_time clue_value must be amount|timestamp.")
+                    try:
+                        amount = Decimal(parts[0].strip())
+                    except InvalidOperation as error:
+                        raise ValueError("amount_time amount must be a valid decimal.") from error
+                    if amount < 0:
+                        raise ValueError("amount_time amount must be non-negative.")
+                    parsed_time = datetime.fromisoformat(parts[1].strip().replace("Z", "+00:00"))
+                    if parsed_time.tzinfo is None:
+                        raise ValueError("amount_time timestamp must include a timezone offset.")
+                    self.clue_value = f"{amount:.2f}|{to_utc(parsed_time).isoformat()}"
+                else:
+                    self.clue_value = value
         return self
 
 
@@ -91,6 +130,8 @@ async def create_case(payload: CaseCreate, db: AsyncSession = Depends(get_db)) -
         seed_value=payload.seed_value,
         evidence_type=payload.evidence_type,
         evidence_types=payload.evidence_types or ([payload.evidence_type] if payload.evidence_type else []),
+        clue_type=payload.clue_type,
+        clue_value=payload.clue_value,
         incident_date=payload.incident_date,
         incident_end_date=payload.incident_end_date,
         incident_start_time=to_utc(payload.incident_start_time) if payload.incident_start_time else None,
@@ -131,13 +172,37 @@ async def get_case(case_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     return _serialize(case, await _counts(db, case_id))
 
 
+class CandidateConfirm(BaseModel):
+    candidate_id: str
+
+
+@router.get("/cases/{case_id}/candidates")
+async def get_candidates(case_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    case = await db.get(Case, case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found.")
+    return await discover_candidates(case, db)
+
+
+@router.post("/cases/{case_id}/candidates/confirm")
+async def confirm_case_candidate(case_id: str, payload: CandidateConfirm, db: AsyncSession = Depends(get_db)) -> dict:
+    case = await db.get(Case, case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found.")
+    try:
+        candidate = await confirm_candidate(case, payload.candidate_id, db)
+    except CandidateError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return {"candidate": candidate, "investigation_mode": case.investigation_mode, "seed_type": case.seed_type, "seed_value": case.seed_value}
+
+
 async def _counts(db: AsyncSession, case_id: str) -> dict[str, int]:
     counts = {}
     for key, model in (("cdr", CdrRecord), ("ipdr", IpdrRecord), ("banking", BankingRecord), ("social", SocialRecord), ("evidence", EvidenceRecordRow)):
         counts[key] = int(await db.scalar(select(func.count()).select_from(model).where(model.case_id == case_id)) or 0)
     counts["entities"] = counts["cdr"] * 2 + counts["ipdr"] * 2 + counts["social"] * 2 + counts["banking"] * 2
     case = await db.get(Case, case_id)
-    if case and case.investigation_mode == "entity" and case.seed_value:
+    if case and case.seed_value:
         counts["entities"] += 1
     counts["alerts"] = int(counts["banking"] > 0) + int(counts["evidence"] > 0)
     return counts
@@ -184,7 +249,7 @@ async def _counts_for_cases(db: AsyncSession, case_ids: list[str]) -> dict[str, 
     cases_by_id = {case.id: case for case in await db.scalars(select(Case).where(Case.id.in_(case_ids)))}
     for case_id, case_counts in counts.items():
         case = cases_by_id[case_id]
-        if case.investigation_mode == "entity" and case.seed_value:
+        if case.seed_value:
             case_counts["entities"] += 1
         case_counts["alerts"] = int(case_counts["banking"] > 0) + int(case_counts["evidence"] > 0)
     return counts
@@ -197,6 +262,7 @@ def _serialize(case: Case, counts: dict[str, int]) -> dict:
         "investigation_mode": case.investigation_mode, "seed_type": case.seed_type,
         "seed_value": case.seed_value, "evidence_type": case.evidence_type,
         "evidence_types": case.evidence_types or [], "incident_date": case.incident_date,
+        "clue_type": case.clue_type, "clue_value": case.clue_value,
         "incident_end_date": case.incident_end_date, "incident_start_time": case.incident_start_time,
         "incident_end_time": case.incident_end_time, "event_description": case.event_description,
         "event_location": case.event_location, "event_lat": case.event_lat,

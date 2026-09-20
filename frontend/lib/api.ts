@@ -452,8 +452,15 @@ export interface GeoEvent {
   timestamp: string;
   entityIds: string[];
   source: string;
+  in_event_window?: boolean;
+  in_event_location?: boolean | null;
 }
-export function getGeo(caseId: string): Promise<GeoEvent[]> {
+export interface GeoResponse {
+  points: GeoEvent[];
+  event_circle?: { center_lat: number; center_lng: number; radius_m: number };
+  event_window?: { start: string; end: string };
+}
+export function getGeo(caseId: string): Promise<GeoEvent[] | GeoResponse> {
   return request(`/cases/${caseId}/geo`);
 }
 

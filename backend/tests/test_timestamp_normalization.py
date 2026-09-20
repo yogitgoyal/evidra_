@@ -304,3 +304,59 @@ async def test_non_event_timeline_keeps_event_metadata_inert(case):
 
     assert events[0].in_event_window is False
     assert events[0].in_event_location is None
+
+
+@pytest.mark.asyncio
+async def test_geo_time_only_flags_points_without_circle(case):
+    case.investigation_mode = "event"
+    case.incident_start_time = datetime.fromisoformat("2026-08-20T12:00:00+00:00")
+    case.incident_end_time = datetime.fromisoformat("2026-08-20T13:00:00+00:00")
+    records = [CdrRecord(id="inside", case_id=case.id, caller="1", callee="2", timestamp=datetime(2026, 8, 20, 12, 30), attributes={"latitude": 30.7, "longitude": 76.7})]
+    response = await DataStore().geo_for_case(case.id, FakeDb(case, records))
+
+    assert response["points"][0]["in_event_window"] is True
+    assert response["points"][0]["in_event_location"] is None
+    assert "event_circle" not in response
+
+
+@pytest.mark.asyncio
+async def test_geo_location_only_flags_points_and_uses_default_radius(case):
+    case.investigation_mode = "event"
+    case.event_lat = 30.7
+    case.event_lng = 76.7
+    records = [CdrRecord(id="near", case_id=case.id, caller="1", callee="2", timestamp=datetime(2026, 8, 20, 12), attributes={"latitude": 30.7, "longitude": 76.7})]
+    response = await DataStore().geo_for_case(case.id, FakeDb(case, records))
+
+    assert response["points"][0]["in_event_window"] is True
+    assert response["points"][0]["in_event_location"] is True
+    assert response["event_circle"] == {"center_lat": 30.7, "center_lng": 76.7, "radius_m": 1000}
+
+
+@pytest.mark.asyncio
+async def test_geo_combines_time_and_location_flags(case):
+    case.investigation_mode = "event"
+    case.incident_start_time = datetime.fromisoformat("2026-08-20T12:00:00+00:00")
+    case.incident_end_time = datetime.fromisoformat("2026-08-20T13:00:00+00:00")
+    case.event_lat = 30.7
+    case.event_lng = 76.7
+    records = [
+        CdrRecord(id="inside", case_id=case.id, caller="1", callee="2", timestamp=datetime(2026, 8, 20, 12, 30), attributes={"latitude": 30.7, "longitude": 76.7}),
+        CdrRecord(id="outside-area", case_id=case.id, caller="3", callee="4", timestamp=datetime(2026, 8, 20, 12, 30), attributes={"latitude": 31.7, "longitude": 77.7}),
+    ]
+    response = await DataStore().geo_for_case(case.id, FakeDb(case, records))
+    points = {point["id"]: point for point in response["points"]}
+
+    assert points["inside"]["in_event_window"] is True
+    assert points["inside"]["in_event_location"] is True
+    assert points["outside-area"]["in_event_window"] is True
+    assert points["outside-area"]["in_event_location"] is False
+
+
+@pytest.mark.asyncio
+async def test_geo_non_event_response_remains_legacy_list(case):
+    case.investigation_mode = "entity"
+    records = [CdrRecord(id="cdr", case_id=case.id, caller="1", callee="2", timestamp=datetime(2026, 8, 20, 12), attributes={"latitude": 30.7, "longitude": 76.7})]
+    response = await DataStore().geo_for_case(case.id, FakeDb(case, records))
+
+    assert isinstance(response, list)
+    assert set(response[0]) == {"id", "latitude", "longitude", "title", "timestamp", "entityIds", "source"}

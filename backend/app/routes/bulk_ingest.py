@@ -41,6 +41,23 @@ def _required(row: dict[str, str], fields: tuple[str, ...]) -> None:
         raise ValueError(f"Missing required field(s): {', '.join(missing)}")
 
 
+def _coordinates(row: dict[str, str]) -> dict[str, float]:
+    attributes = {}
+    aliases = {
+        "latitude": ("latitude", "lat"),
+        "longitude": ("longitude", "lng", "lon"),
+    }
+    for attribute, names in aliases.items():
+        value = next((row.get(name) for name in names if row.get(name)), None)
+        if value is None:
+            continue
+        try:
+            attributes[attribute] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return attributes
+
+
 async def _case_or_404(case_id: str, db: AsyncSession) -> None:
     if await db.get(Case, case_id) is None:
         raise HTTPException(status_code=404, detail="Case not found.")
@@ -85,7 +102,7 @@ async def upload_cdr_bulk(case_id: str, file: UploadFile = File(...), db: AsyncS
                 callee=row["callee"],
                 duration_seconds=duration,
                 timestamp=_timestamp(row.get("timestamp")),
-                attributes={},
+                attributes=_coordinates(row),
                 original_filename=file.filename,
                 original_content_type=file.content_type,
                 original_file=file_bytes,

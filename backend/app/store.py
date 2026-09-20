@@ -1194,8 +1194,9 @@ class DataStore:
     def activity_for_dashboard(self) -> list:
         return self.weekly_activity
 
-    async def geo_for_case(self, case_id: str, db: AsyncSession) -> list[dict]:
-        if await db.get(Case, case_id) is None:
+    async def geo_for_case(self, case_id: str, db: AsyncSession) -> dict:
+        case = await db.get(Case, case_id)
+        if case is None:
             raise HTTPException(status_code=404, detail="Case not found.")
         rows = list(await db.scalars(select(CdrRecord).where(CdrRecord.case_id == case_id)))
         result = []
@@ -1205,10 +1206,29 @@ class DataStore:
             longitude = attrs.get("longitude", attrs.get("lng", attrs.get("lon")))
             if latitude is None or longitude is None:
                 continue
-            result.append({"id": row.id, "latitude": float(latitude), "longitude": float(longitude),
-                           "title": "CDR location", "timestamp": row.timestamp.isoformat(),
-                           "entityIds": [row.caller, row.callee], "source": "CDR"})
-        return result
+            point = {"id": row.id, "latitude": float(latitude), "longitude": float(longitude),
+                     "title": "CDR location", "timestamp": row.timestamp.isoformat(),
+                     "entityIds": [row.caller, row.callee], "source": "CDR"}
+            if case.investigation_mode == "event":
+                point["in_event_window"] = in_event_window(case, row.timestamp)
+                point["in_event_location"] = cdr_location_match(case, row) if case.event_lat is not None and case.event_lng is not None else None
+            result.append(point)
+        if case.investigation_mode != "event":
+            return result
+        response: dict = {"points": result}
+        if case.investigation_mode == "event" and case.event_lat is not None and case.event_lng is not None:
+            response["event_circle"] = {
+                "center_lat": case.event_lat,
+                "center_lng": case.event_lng,
+                "radius_m": case.event_radius_m if case.event_radius_m is not None else 1000,
+            }
+        window = event_window(case)
+        if case.investigation_mode == "event" and window:
+            response["event_window"] = {
+                "start": window[0].isoformat(),
+                "end": window[1].isoformat(),
+            }
+        return response
 
     async def report_for_case(self, case_id: str, db: AsyncSession | None = None) -> dict:
         return {

@@ -70,6 +70,8 @@ export interface CaseCreatePayload {
   seed_value?: string;
   evidence_type?: "CDR" | "IPDR" | "Banking" | "Social" | "Identity" | "Report";
   evidence_types?: ("CDR" | "IPDR" | "Banking" | "Social" | "Identity" | "Report")[];
+  clue_type?: "transaction_id" | "upi_ref" | "phone" | "ip" | "amount_time";
+  clue_value?: string;
   incident_date?: string;
   incident_end_date?: string;
   incident_start_time?: string;
@@ -102,6 +104,8 @@ export interface CaseApiResponse {
   seed_value?: string;
   evidence_type?: string;
   evidence_types?: string[];
+  clue_type?: string | null;
+  clue_value?: string | null;
   incident_date?: string;
   incident_end_date?: string;
   incident_start_time?: string;
@@ -149,6 +153,46 @@ export async function createCase(payload: CaseCreatePayload): Promise<CaseApiRes
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+  });
+}
+
+export type ClueType = NonNullable<CaseCreatePayload["clue_type"]>;
+
+export interface CandidateEntity {
+  id: string;
+  type: string;
+  value: string;
+  label: string;
+}
+
+export interface Candidate {
+  entity: CandidateEntity;
+  score: number;
+  reasons: string[];
+  matching_record_ids: string[];
+  matching_evidence_ids: string[];
+}
+
+export interface CandidatesResponse {
+  clue: { type: string | null; value: string | null };
+  reason?: string;
+  candidates: Candidate[];
+}
+
+export function getCandidates(caseId: string): Promise<CandidatesResponse> {
+  return request(`/cases/${caseId}/candidates`);
+}
+
+export function confirmCandidate(caseId: string, candidateId: string): Promise<{
+  candidate: Candidate;
+  investigation_mode: string;
+  seed_type: string;
+  seed_value: string;
+}> {
+  return request(`/cases/${caseId}/candidates/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ candidate_id: candidateId }),
   });
 }
 

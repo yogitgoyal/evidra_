@@ -3,7 +3,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getCase, deleteCase, CaseApiResponse, getGraph, getTimeline, getStory, getRiskFactors, getEvidence, getOverview, RiskFactor } from "@/lib/api";
+import { getCase, deleteCase, CaseApiResponse, getGraph, getTimeline, getStory, getRiskFactors, getEvidence, getOverview, getCandidates, confirmCandidate, CandidatesResponse, RiskFactor } from "@/lib/api";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import type { Entity, StoryClaim, TimelineEvent, EventWindowActivity } from "@/lib/types";
@@ -13,6 +13,7 @@ import { RiskRadarChart } from "@/components/case/RiskRadarChart";
 import { EntityIcon, entityTypeLabel } from "@/components/case/EntityIcon";
 import { Card, SectionLabel } from "@/components/ui/primitives";
 import { confidenceLabel, riskColor } from "@/lib/utils";
+import { Cite } from "@/components/evidence/Cite";
 import {
   GitFork,
   History,
@@ -48,6 +49,10 @@ export default function CaseOverviewPage() {
   const [eventWindowActivity, setEventWindowActivity] = useState<EventWindowActivity[]>([]);
   const [riskFactorsLoading, setRiskFactorsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [candidates, setCandidates] = useState<CandidatesResponse | null>(null);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [candidateError, setCandidateError] = useState("");
+  const [confirmingCandidate, setConfirmingCandidate] = useState<string | null>(null);
 
   useEffect(() => {
     if (!caseId) return;
@@ -63,6 +68,12 @@ export default function CaseOverviewPage() {
         setRiskFactors(nextRiskFactors.riskFactors);
         setEvidenceCount(evidence.evidence.length);
         setEventWindowActivity(overview.event_window_activity ?? []);
+        if (nextCase.clue_type && nextCase.clue_value) {
+          setCandidatesLoading(true);
+          getCandidates(caseId).then(setCandidates).catch((err: Error) => setCandidateError(err.message)).finally(() => setCandidatesLoading(false));
+        } else {
+          setCandidates(null);
+        }
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setRiskFactorsLoading(false));
@@ -107,6 +118,21 @@ export default function CaseOverviewPage() {
     }
   }
 
+  async function handleConfirmCandidate(candidateId: string) {
+    setConfirmingCandidate(candidateId);
+    setCandidateError("");
+    try {
+      await confirmCandidate(caseId, candidateId);
+      const [nextCase, nextCandidates] = await Promise.all([getCase(caseId), getCandidates(caseId)]);
+      setRealCase(nextCase);
+      setCandidates(nextCandidates);
+    } catch (err) {
+      setCandidateError(err instanceof Error ? err.message : "Failed to confirm candidate.");
+    } finally {
+      setConfirmingCandidate(null);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-6 py-8 lg:px-8">
       {/* Case Header */}
@@ -117,6 +143,43 @@ export default function CaseOverviewPage() {
           <span className="font-semibold text-text">Expected evidence:</span>{" "}
           {realCase.evidence_types?.join(", ")}
         </div>
+      )}
+
+      {realCase?.investigation_mode === "evidence" && realCase.clue_type && realCase.clue_value && (
+        <Card initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-6">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <SectionLabel>CLUE CANDIDATES</SectionLabel>
+              <div className="mt-2 text-sm text-text">{realCase.clue_type.replace("_", " ")}: <span className="font-mono text-cyan">{realCase.clue_value}</span></div>
+            </div>
+            {realCase.seed_value && <Link href={`/case/${caseId}/graph`} className="rounded-lg border border-cyan/30 bg-cyan-dim px-3 py-2 text-xs font-medium text-cyan hover:border-cyan/50">Starting entity: {realCase.seed_value}</Link>}
+          </div>
+          {candidateError && <p role="alert" className="mb-3 text-sm text-red-500">{candidateError}</p>}
+          {candidatesLoading ? <p className="text-sm text-text-dim">Searching case evidence for candidates…</p> : candidates?.candidates.length ? (
+            <div className="space-y-3">
+              {candidates.candidates.map((candidate) => (
+                <div key={candidate.entity.id} className="rounded-lg border border-border-soft bg-surface-2 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-text"><span>{candidate.entity.label}</span><span className="rounded-md bg-cyan-dim px-1.5 py-0.5 text-[10px] uppercase text-cyan">{candidate.entity.type}</span><span className="font-mono text-xs text-text-faint">score {candidate.score}</span></div>
+                      <div className="mt-1 text-xs text-text-dim">{candidate.matching_record_ids.length} matching record{candidate.matching_record_ids.length === 1 ? "" : "s"}</div>
+                    </div>
+                    <button type="button" onClick={() => void handleConfirmCandidate(candidate.entity.id)} disabled={confirmingCandidate !== null} className="rounded-lg bg-cyan px-3 py-2 text-xs font-medium text-white disabled:opacity-50">{confirmingCandidate === candidate.entity.id ? "Confirming…" : realCase.seed_value === candidate.entity.value ? "Confirmed" : "Confirm"}</button>
+                  </div>
+                  <ul className="mt-3 space-y-1 text-xs text-text-dim">{candidate.reasons.map((reason) => <li key={reason}>• {reason}</li>)}</ul>
+                  {candidate.matching_evidence_ids.length > 0 && <div className="mt-3 flex flex-wrap items-center gap-1 text-xs text-text-faint"><span>Evidence:</span><Cite ids={candidate.matching_evidence_ids} chipKey={`candidate-${candidate.entity.id}`} /></div>}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-border-soft bg-surface-2 p-4 text-sm text-text-dim">
+              <p>{candidates?.reason ?? "No matching evidence has been ingested yet."}</p>
+              <p className="mt-2">Upload evidence, then return here to refresh candidates.</p>
+              <div className="mt-3 flex flex-wrap gap-2">{[["CDR", "data"], ["Banking", "banking"], ["IPDR", "ipdr"], ["Social", "social"], ["Identity", "identity"]].map(([label, path]) => <Link key={path} href={`/case/${caseId}/${path}`} className="rounded-md border border-border-soft bg-surface px-2.5 py-1.5 text-xs text-text-dim hover:border-cyan/40 hover:text-cyan">Upload {label}</Link>)}</div>
+              {(realCase.clue_type === "transaction_id" || realCase.clue_type === "upi_ref") && <p className="mt-3 text-xs text-text-faint">Transaction IDs and UPI references require a banking CSV with the matching columns.</p>}
+            </div>
+          )}
+        </Card>
       )}
 
       <div className="flex justify-end">

@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createCase, toIstTimestamp, validateEventDetails } from "@/lib/api";
+import { createCase, toIstTimestamp, validateEventDetails, ClueType } from "@/lib/api";
+import { EvidenceClueFields, clueValue, validateClue } from "@/components/case/EvidenceClueFields";
 
 export default function NewCasePage() {
   const router = useRouter();
@@ -14,6 +15,10 @@ export default function NewCasePage() {
   const [seedType, setSeedType] = useState<"phone" | "bank_account" | "social_handle">("phone");
   const [seedValue, setSeedValue] = useState("");
   const [evidenceTypes, setEvidenceTypes] = useState<string[]>(["CDR"]);
+  const [clueType, setClueType] = useState<ClueType | "">("");
+  const [clueValueInput, setClueValueInput] = useState("");
+  const [clueAmount, setClueAmount] = useState("");
+  const [clueTimestamp, setClueTimestamp] = useState("");
   const [incidentDate, setIncidentDate] = useState("");
   const [incidentEndDate, setIncidentEndDate] = useState("");
   const [incidentStartTime, setIncidentStartTime] = useState("");
@@ -47,6 +52,17 @@ export default function NewCasePage() {
         return;
       }
     }
+    if (mode === "evidence") {
+      const clueError = validateClue(clueType, clueValueInput, clueAmount, clueTimestamp);
+      if (clueError) {
+        setError(clueError);
+        return;
+      }
+      if (!clueType && evidenceTypes.length === 0) {
+        setError("Choose a clue or at least one evidence type.");
+        return;
+      }
+    }
     setLoading(true);
     setError(null);
     try {
@@ -60,6 +76,8 @@ export default function NewCasePage() {
         seed_value: mode === "entity" ? seedValue.trim() : undefined,
         evidence_type: mode === "evidence" ? evidenceTypes[0] as "CDR" : undefined,
         evidence_types: mode === "evidence" ? evidenceTypes as never : undefined,
+        clue_type: mode === "evidence" && clueType ? clueType : undefined,
+        clue_value: mode === "evidence" ? clueValue(clueType, clueValueInput, clueAmount, clueTimestamp) : undefined,
         incident_date: mode === "event" ? incidentDate || undefined : undefined,
         incident_end_date: mode === "event" ? incidentEndDate || undefined : undefined,
         incident_start_time: mode === "event" ? toIstTimestamp(incidentStartTime) : undefined,
@@ -70,7 +88,7 @@ export default function NewCasePage() {
         event_lng: mode === "event" && eventLng !== "" ? Number(eventLng) : undefined,
         event_radius_m: mode === "event" && eventRadius !== "" ? Number(eventRadius) : undefined,
       });
-      if (mode === "evidence" && evidenceTypes.length === 1) {
+      if (mode === "evidence" && !clueType && evidenceTypes.length === 1) {
         const destination = { CDR: "data", IPDR: "ipdr", Banking: "banking", Social: "social", Identity: "identity", Report: "reports" }[evidenceTypes[0]];
         router.push(`/case/${created.id}/${destination}`);
       } else router.push(`/case/${created.id}`);
@@ -117,7 +135,7 @@ export default function NewCasePage() {
           </select>
         </div>
         {mode === "entity" && <div className="grid gap-3 sm:grid-cols-2"><select value={seedType} onChange={(e) => setSeedType(e.target.value as typeof seedType)} className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text"><option value="phone">Phone</option><option value="bank_account">Bank Account</option><option value="social_handle">Social Handle</option></select><input value={seedValue} onChange={(e) => setSeedValue(e.target.value)} placeholder="Known identifier" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /></div>}
-        {mode === "evidence" && <div className="grid gap-2 sm:grid-cols-3">{["CDR", "IPDR", "Banking", "Social", "Identity", "Report"].map((type) => <label key={type} className="flex items-center gap-2 rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text"><input type="checkbox" checked={evidenceTypes.includes(type)} onChange={() => setEvidenceTypes((current) => current.includes(type) ? current.filter((item) => item !== type) : [...current, type])} />{type}</label>)}</div>}
+        {mode === "evidence" && <div className="space-y-3"><EvidenceClueFields type={clueType} value={clueValueInput} amount={clueAmount} timestamp={clueTimestamp} onTypeChange={setClueType} onValueChange={setClueValueInput} onAmountChange={setClueAmount} onTimestampChange={setClueTimestamp} error={validateClue(clueType, clueValueInput, clueAmount, clueTimestamp)} /><div><div className="mb-1 text-xs font-medium text-text-faint">Evidence you have (optional)</div><div className="grid gap-2 sm:grid-cols-3">{["CDR", "IPDR", "Banking", "Social", "Identity", "Report"].map((type) => <label key={type} className="flex items-center gap-2 rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text"><input type="checkbox" checked={evidenceTypes.includes(type)} onChange={() => setEvidenceTypes((current) => current.includes(type) ? current.filter((item) => item !== type) : [...current, type])} />{type}</label>)}</div></div></div>}
         {mode === "event" && <div className="grid gap-3 sm:grid-cols-2"><input type="date" aria-label="Incident start date" value={incidentDate} onChange={(e) => setIncidentDate(e.target.value)} className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input type="date" aria-label="Incident end date" value={incidentEndDate} onChange={(e) => setIncidentEndDate(e.target.value)} className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input type="datetime-local" aria-label="Incident start time (IST)" value={incidentStartTime} onChange={(e) => setIncidentStartTime(e.target.value)} className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input type="datetime-local" aria-label="Incident end time (IST)" value={incidentEndTime} onChange={(e) => setIncidentEndTime(e.target.value)} className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input value={eventLocation} onChange={(e) => setEventLocation(e.target.value)} placeholder="Location (optional)" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input value={eventDescription} onChange={(e) => setEventDescription(e.target.value)} placeholder="Brief event description" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input type="number" aria-label="Event latitude" value={eventLat} onChange={(e) => setEventLat(e.target.value)} placeholder="Latitude" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input type="number" aria-label="Event longitude" value={eventLng} onChange={(e) => setEventLng(e.target.value)} placeholder="Longitude" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /><input type="number" min="0" aria-label="Event radius in meters" value={eventRadius} onChange={(e) => setEventRadius(e.target.value)} placeholder="Radius in meters (default 1000)" className="rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm text-text" /></div>}
         {error && <p className="text-sm text-red-500">{error}</p>}
         <button

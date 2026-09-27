@@ -462,12 +462,45 @@ export function getTimeline(caseId: string): Promise<TimelineEvent[]> {
   return request(`/cases/${caseId}/timeline`);
 }
 
+export type CaseOverviewStartingPoint =
+  | {
+      mode: "entity";
+      seed: { type: string; value: string } | null;
+      matching_record_count: number;
+      first_hop_contact_count: number;
+    }
+  | {
+      mode: "evidence";
+      clue: { type: string; value: string } | null;
+      state: "no_clue" | "no_candidates" | "candidates_unconfirmed" | "confirmed";
+      candidate_count: number;
+      confirmed_candidate: { type: string; value: string } | null;
+    }
+  | {
+      mode: "event";
+      window: { start: string; end: string } | null;
+      location: {
+        label: string | null;
+        latitude: number | null;
+        longitude: number | null;
+        radius_m: number | null;
+      } | null;
+      record_count: number;
+    };
+
+export interface CaseOverviewSuggestedNextStep {
+  code: string;
+  text: string;
+}
+
 export interface CaseOverviewResponse {
   caseId: string;
   suspects: number;
   evidenceCount: number;
   anomalies: number;
   event_window_activity: EventWindowActivity[];
+  starting_point?: CaseOverviewStartingPoint | null;
+  suggested_next_step?: CaseOverviewSuggestedNextStep | null;
 }
 
 export function getOverview(caseId: string): Promise<CaseOverviewResponse> {
@@ -498,6 +531,8 @@ export interface GeoEvent {
   source: string;
   in_event_window?: boolean;
   in_event_location?: boolean | null;
+  is_seed?: boolean;
+  hop?: number;
 }
 export interface GeoResponse {
   points: GeoEvent[];

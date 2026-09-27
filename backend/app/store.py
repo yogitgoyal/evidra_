@@ -101,6 +101,10 @@ def normalize_entity_value(entity_type: str, value: str) -> str:
     return re.sub(r"\s+", " ", value.strip()).casefold()
 
 
+def normalize_reference_identifier(value: str) -> str:
+    return value.strip().rstrip(".,;:!?")
+
+
 def normalize_alias(value: str) -> str:
     return re.sub(r"[^a-z0-9]", "", value.casefold())
 
@@ -121,6 +125,15 @@ def near_exact_alias_match(person_label: str, social_label: str) -> bool:
 def entity_id(entity_type: str, value: str) -> tuple[str, str]:
     normalized = normalize_entity_value(entity_type, value)
     return f"{entity_type}:{normalized}", normalized
+
+
+def normalized_seed_entity_type(seed_type: str | None) -> str:
+    return {
+        "phone": "phone",
+        "bank_account": "account",
+        "social_handle": "social",
+        "ip": "ip",
+    }.get(seed_type or "phone", "phone")
 
 class DataStore:
     def __init__(self):
@@ -688,12 +701,7 @@ class DataStore:
                 seed_entity_type = None
                 seed_entity_normalized = None
                 if case and case.seed_value:
-                    seed_entity_type = {
-                        "phone": "phone",
-                        "bank_account": "account",
-                        "social_handle": "social",
-                        "ip": "ip",
-                    }.get(case.seed_type or "phone", "phone")
+                    seed_entity_type = normalized_seed_entity_type(case.seed_type)
                     seed_entity_normalized = normalize_entity_value(seed_entity_type, case.seed_value)
 
                 for row in cdr:
@@ -1005,6 +1013,85 @@ class DataStore:
         metrics = await self.fraud_analysis(case_id, db)
         event_window_activity = []
         window = event_window(case)
+        starting_point: dict
+        suggested_next_step = None
+        if case.investigation_mode == "entity":
+            seed = {"type": case.seed_type or "phone", "value": case.seed_value} if case.seed_value else None
+            matching_record_count = 0
+            first_hop_contact_count = 0
+            if seed:
+                graph = await self.graph_for_case(case_id, db)
+                seed_type = normalized_seed_entity_type(case.seed_type)
+                seed_id, _ = entity_id(seed_type, case.seed_value)
+                seed_entity = next((entity for entity in graph.entities if entity.id == seed_id), None)
+                if seed_entity:
+                    matching_record_count = len(seed_entity.evidenceIds or [])
+                neighbors = set()
+                for edge in graph.edges:
+                    if edge.source == seed_id and edge.target != seed_id:
+                        neighbors.add(edge.target)
+                    elif edge.target == seed_id and edge.source != seed_id:
+                        neighbors.add(edge.source)
+                first_hop_contact_count = len(neighbors)
+            starting_point = {
+                "mode": "entity",
+                "seed": seed,
+                "matching_record_count": matching_record_count,
+                "first_hop_contact_count": first_hop_contact_count,
+            }
+            if not seed:
+                suggested_next_step = {"code": "add_seed", "text": "Choose a starting entity"}
+            elif matching_record_count == 0:
+                suggested_next_step = {"code": "no_seed_matches", "text": "No records match this seed"}
+        elif case.investigation_mode == "evidence":
+            clue = {"type": case.clue_type, "value": case.clue_value} if case.clue_type and case.clue_value else None
+            candidate_count = 0
+            if clue:
+                from app.candidates import discover_candidates
+
+                candidate_result = await discover_candidates(case, db)
+                candidate_count = len(candidate_result["candidates"])
+            confirmed_candidate = (
+                {"type": case.seed_type or "phone", "value": case.seed_value}
+                if case.seed_value
+                else None
+            )
+            if not clue:
+                state = "no_clue"
+            elif confirmed_candidate:
+                state = "confirmed"
+            elif candidate_count:
+                state = "candidates_unconfirmed"
+                suggested_next_step = {"code": "review_candidate", "text": "Review and confirm a candidate"}
+            else:
+                state = "no_candidates"
+                suggested_next_step = {"code": "ingest_matching_evidence", "text": "Add evidence matching this clue"}
+            starting_point = {
+                "mode": "evidence",
+                "clue": clue,
+                "state": state,
+                "candidate_count": candidate_count,
+                "confirmed_candidate": confirmed_candidate,
+            }
+        else:
+            record_count = sum(1 for row in dataset_rows if in_event_window(case, row.timestamp))
+            starting_point = {
+                "mode": "event",
+                "window": {"start": window[0].isoformat(), "end": window[1].isoformat()} if window else None,
+                "location": (
+                    {
+                        "label": case.event_location,
+                        "latitude": case.event_lat,
+                        "longitude": case.event_lng,
+                        "radius_m": case.event_radius_m,
+                    }
+                    if case.event_location or case.event_lat is not None or case.event_lng is not None
+                    else None
+                ),
+                "record_count": record_count,
+            }
+            if window and record_count == 0:
+                suggested_next_step = {"code": "widen_event_window", "text": "Try widening the window"}
         if window:
             evidence_rows = list(await db.scalars(
                 select(EvidenceRecordRow).where(EvidenceRecordRow.case_id == case_id)
@@ -1071,6 +1158,8 @@ class DataStore:
             "evidenceCount": evidence_count,
             "anomalies": metrics["anomalyEventsCount"],
             "event_window_activity": event_window_activity,
+            "starting_point": starting_point,
+            "suggested_next_step": suggested_next_step,
         }
 
     async def dashboard_for_user(self, db: AsyncSession | None = None) -> dict:
@@ -1197,6 +1286,15 @@ class DataStore:
         if case is None:
             raise HTTPException(status_code=404, detail="Case not found.")
         rows = list(await db.scalars(select(CdrRecord).where(CdrRecord.case_id == case_id)))
+        seed_type = normalized_seed_entity_type(case.seed_type) if case.seed_value else None
+        seed_value = normalize_entity_value(seed_type, case.seed_value) if seed_type and case.seed_value else None
+        counterparties: set[str] = set()
+        if seed_type == "phone" and seed_value is not None:
+            for row in rows:
+                caller = normalize_entity_value("phone", row.caller)
+                callee = normalize_entity_value("phone", row.callee)
+                if seed_value in {caller, callee}:
+                    counterparties.add(callee if caller == seed_value else caller)
         result = []
         for row in rows:
             attrs = row.attributes or {}
@@ -1207,6 +1305,13 @@ class DataStore:
             point = {"id": row.id, "latitude": float(latitude), "longitude": float(longitude),
                      "title": "CDR location", "timestamp": row.timestamp.isoformat(),
                      "entityIds": [row.caller, row.callee], "source": "CDR"}
+            if seed_value is not None and seed_type == "phone":
+                caller = normalize_entity_value("phone", row.caller)
+                callee = normalize_entity_value("phone", row.callee)
+                if seed_value in {caller, callee}:
+                    point["is_seed"] = True
+                if caller in counterparties or callee in counterparties:
+                    point["hop"] = 1
             if case.investigation_mode == "event":
                 point["in_event_window"] = in_event_window(case, row.timestamp)
                 point["in_event_location"] = cdr_location_match(case, row) if case.event_lat is not None and case.event_lng is not None else None

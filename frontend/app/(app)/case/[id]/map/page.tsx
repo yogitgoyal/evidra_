@@ -15,7 +15,7 @@ type MapInstance = {
   setView: (center: [number, number], zoom: number) => void;
 };
 
-function EventMap({ points, geo, windowOnly }: { points: GeoEvent[]; geo: GeoResponse | null; windowOnly: boolean }) {
+function EventMap({ points, geo, windowOnly, seedMode = false }: { points: GeoEvent[]; geo: GeoResponse | null; windowOnly: boolean; seedMode?: boolean }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<MapInstance | null>(null);
   const layers = useRef<MapLayer[]>([]);
@@ -70,12 +70,14 @@ function EventMap({ points, geo, windowOnly }: { points: GeoEvent[]; geo: GeoRes
       }
       validPoints.forEach((point) => {
         try {
+          const isSeedPoint = seedMode && point.is_seed === true;
+          const isHopPoint = seedMode && !isSeedPoint && point.hop === 1;
           const marker = leaflet.circleMarker([point.latitude, point.longitude], {
             radius: 7,
-            color: point.in_event_location === true ? "#16874f" : "#d97a06",
-            fillColor: point.in_event_location === true ? "#16874f" : "#d97a06",
-            fillOpacity: point.in_event_window === false ? 0.18 : 0.85,
-            opacity: point.in_event_window === false ? 0.35 : 1,
+            color: seedMode ? (isSeedPoint ? "#dc3d43" : isHopPoint ? "#2f5fe0" : "#64748b") : point.in_event_location === true ? "#16874f" : "#d97a06",
+            fillColor: seedMode ? (isSeedPoint ? "#dc3d43" : isHopPoint ? "#2f5fe0" : "#64748b") : point.in_event_location === true ? "#16874f" : "#d97a06",
+            fillOpacity: seedMode ? (isSeedPoint ? 0.95 : isHopPoint ? 0.8 : 0.28) : point.in_event_window === false ? 0.18 : 0.85,
+            opacity: seedMode ? (isSeedPoint ? 1 : isHopPoint ? 0.9 : 0.45) : point.in_event_window === false ? 0.35 : 1,
           }).bindTooltip(point.title).addTo(map);
           layers.current.push(marker);
         } catch (error) {
@@ -91,7 +93,7 @@ function EventMap({ points, geo, windowOnly }: { points: GeoEvent[]; geo: GeoRes
       mapInstance.current = null;
       layers.current = [];
     };
-  }, [geo, validPoints]);
+  }, [geo, seedMode, validPoints]);
 
   return <div ref={mapRef} className="h-[360px] w-full overflow-hidden rounded-lg" />;
 }
@@ -117,6 +119,8 @@ export default function GeospatialPage() {
   const eventCase = caseData?.investigation_mode === "event";
   const insideArea = locations.filter((location) => location.in_event_location === true).length;
   const hasCoordinates = locations.length > 0;
+  const seedCase = !eventCase && Boolean(caseData?.seed_value);
+  const seedPointCount = locations.filter((location) => location.is_seed === true || location.hop === 1).length;
 
   return (
     <div className="mx-auto max-w-7xl w-full min-w-0 space-y-6 px-6 py-8 lg:px-8">
@@ -132,7 +136,10 @@ export default function GeospatialPage() {
         {eventCase && !hasCoordinates ? <p className="text-sm text-text-dim">Map points need CDR records with latitude/longitude</p> : eventCase && geo?.event_circle ? <>
           <EventMap points={locations} geo={geo} windowOnly={windowOnly} />
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-text-dim"><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-green-600" />Inside area</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-amber-600" />Outside area</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-gray-400" />Outside time window</span><span>{insideArea} of {locations.length} CDR points inside the area</span></div>
-        </> : !eventCase && hasCoordinates ? <EventMap points={locations} geo={null} windowOnly={false} /> : locations.length === 0 ? <p className="text-sm text-text-dim">No location attributes are available for this case.</p> : (
+        </> : !eventCase && hasCoordinates ? <>
+          <EventMap points={locations} geo={null} windowOnly={false} seedMode={seedCase} />
+          {seedCase && <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-text-dim"><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-red-500" />Seed</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-blue-600" />1-hop contact</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-slate-500" />Other</span><span>{seedPointCount} of {locations.length} points involve {caseData?.seed_value}</span></div>}
+        </> : locations.length === 0 ? <p className="text-sm text-text-dim">No location attributes are available for this case.</p> : (
           <div className="grid gap-3 sm:grid-cols-2">
             {locations.map((location) => (
               <div key={location.id} className="rounded-lg border border-border-soft bg-bg-raised p-4">

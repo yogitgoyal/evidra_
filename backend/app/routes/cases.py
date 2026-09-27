@@ -12,7 +12,7 @@ from app.deps import get_db
 from app.models.audit import AuditLogEntry
 from app.models.case import Case
 from app.models.datasets import BankingRecord, CdrRecord, EvidenceRecordRow, IpdrRecord, SocialRecord
-from app.store import to_utc
+from app.store import normalize_reference_identifier, to_utc
 from app.candidates import CandidateError, confirm_candidate, discover_candidates
 
 router = APIRouter(tags=["cases"])
@@ -47,6 +47,10 @@ class CaseBase(BaseModel):
 class CaseCreate(CaseBase):
     @model_validator(mode="after")
     def validate_mode_fields(self) -> "CaseCreate":
+        if self.clue_value is not None:
+            self.clue_value = self.clue_value.strip()
+            if self.clue_type in {"transaction_id", "upi_ref"}:
+                self.clue_value = normalize_reference_identifier(self.clue_value)
         if self.investigation_mode == "entity":
             if not self.seed_type or not self.seed_value or not self.seed_value.strip():
                 raise ValueError("Entity-led cases require seed_type and a non-empty seed_value.")
@@ -76,7 +80,7 @@ class CaseCreate(CaseBase):
             if self.clue_type is not None:
                 if self.clue_type not in {"transaction_id", "upi_ref", "phone", "ip", "amount_time"}:
                     raise ValueError("Unsupported evidence clue_type.")
-                value = (self.clue_value or "").strip()
+                value = self.clue_value or ""
                 if not value:
                     raise ValueError("Evidence clue_value must not be empty.")
                 if self.clue_type == "phone" and (not value.isdigit() or len(value) < 7):

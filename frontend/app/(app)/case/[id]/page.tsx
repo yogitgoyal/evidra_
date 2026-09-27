@@ -3,11 +3,12 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getCase, deleteCase, CaseApiResponse, getGraph, getTimeline, getStory, getRiskFactors, getEvidence, getOverview, getCandidates, confirmCandidate, CandidatesResponse, RiskFactor } from "@/lib/api";
+import { getCase, deleteCase, CaseApiResponse, getGraph, getTimeline, getStory, getRiskFactors, getEvidence, getOverview, getCandidates, confirmCandidate, CandidatesResponse, RiskFactor, CaseOverviewStartingPoint, CaseOverviewSuggestedNextStep } from "@/lib/api";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import type { Entity, StoryClaim, TimelineEvent, EventWindowActivity } from "@/lib/types";
 import { CaseHeader } from "@/components/case/CaseHeader";
+import { StartingPointCard } from "@/components/case/StartingPointCard";
 import { StoryMode } from "@/components/case/StoryMode";
 import { RiskRadarChart } from "@/components/case/RiskRadarChart";
 import { EntityIcon, entityTypeLabel } from "@/components/case/EntityIcon";
@@ -47,6 +48,8 @@ export default function CaseOverviewPage() {
   const [evidenceCount, setEvidenceCount] = useState(0);
   const [riskFactors, setRiskFactors] = useState<RiskFactor[]>([]);
   const [eventWindowActivity, setEventWindowActivity] = useState<EventWindowActivity[]>([]);
+  const [startingPoint, setStartingPoint] = useState<CaseOverviewStartingPoint | null>(null);
+  const [suggestedNextStep, setSuggestedNextStep] = useState<CaseOverviewSuggestedNextStep | null>(null);
   const [riskFactorsLoading, setRiskFactorsLoading] = useState(true);
   const [error, setError] = useState("");
   const [candidates, setCandidates] = useState<CandidatesResponse | null>(null);
@@ -58,6 +61,8 @@ export default function CaseOverviewPage() {
     if (!caseId) return;
     setError("");
     setRiskFactorsLoading(true);
+    setStartingPoint(null);
+    setSuggestedNextStep(null);
     Promise.all([getCase(caseId), getGraph(caseId), getTimeline(caseId), getStory(caseId), getRiskFactors(caseId), getEvidence(caseId), getOverview(caseId)])
       .then(([nextCase, graph, nextTimeline, story, nextRiskFactors, evidence, overview]) => {
         setRealCase(nextCase);
@@ -68,6 +73,8 @@ export default function CaseOverviewPage() {
         setRiskFactors(nextRiskFactors.riskFactors);
         setEvidenceCount(evidence.evidence.length);
         setEventWindowActivity(overview.event_window_activity ?? []);
+        setStartingPoint(overview.starting_point ?? null);
+        setSuggestedNextStep(overview.suggested_next_step ?? null);
         if (nextCase.clue_type && nextCase.clue_value) {
           setCandidatesLoading(true);
           getCandidates(caseId).then(setCandidates).catch((err: Error) => setCandidateError(err.message)).finally(() => setCandidatesLoading(false));
@@ -123,9 +130,11 @@ export default function CaseOverviewPage() {
     setCandidateError("");
     try {
       await confirmCandidate(caseId, candidateId);
-      const [nextCase, nextCandidates] = await Promise.all([getCase(caseId), getCandidates(caseId)]);
+      const [nextCase, nextCandidates, overview] = await Promise.all([getCase(caseId), getCandidates(caseId), getOverview(caseId)]);
       setRealCase(nextCase);
       setCandidates(nextCandidates);
+      setStartingPoint(overview.starting_point ?? null);
+      setSuggestedNextStep(overview.suggested_next_step ?? null);
     } catch (err) {
       setCandidateError(err instanceof Error ? err.message : "Failed to confirm candidate.");
     } finally {
@@ -138,6 +147,7 @@ export default function CaseOverviewPage() {
       {/* Case Header */}
       {error && <div role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       <CaseHeader c={caseData} />
+      <StartingPointCard startingPoint={startingPoint} suggestedNextStep={suggestedNextStep} />
       {realCase?.investigation_mode === "evidence" && (realCase.evidence_types?.length ?? 0) > 1 && (
         <div className="rounded-xl border border-border-soft bg-surface px-4 py-3 text-sm text-text-dim">
           <span className="font-semibold text-text">Expected evidence:</span>{" "}

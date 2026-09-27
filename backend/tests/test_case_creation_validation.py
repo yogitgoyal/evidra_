@@ -58,6 +58,39 @@ def test_valid_mode_payloads_are_accepted():
     )
 
 
+@pytest.mark.parametrize(
+    ("clue_type", "clue_value", "expected"),
+    [
+        ("transaction_id", "  tx-1  ", "tx-1"),
+        ("upi_ref", "  upi.ref  ", "upi.ref"),
+        ("phone", " 9876500001 ", "9876500001"),
+        ("ip", " 192.0.2.1 ", "192.0.2.1"),
+        ("amount_time", " 100 | 2026-08-20T10:00:00+00:00 ", "100.00|2026-08-20T10:00:00+00:00"),
+    ],
+)
+def test_evidence_clue_values_are_trimmed(clue_type, clue_value, expected):
+    payload = CaseCreate(
+        name="Evidence case",
+        investigation_mode="evidence",
+        clue_type=clue_type,
+        clue_value=clue_value,
+    )
+
+    assert payload.clue_value == expected
+
+
+@pytest.mark.parametrize("clue_type", ["transaction_id", "upi_ref"])
+def test_identifier_clue_trailing_punctuation_is_stripped(clue_type):
+    payload = CaseCreate(
+        name="Evidence case",
+        investigation_mode="evidence",
+        clue_type=clue_type,
+        clue_value="ref-1.,;",
+    )
+
+    assert payload.clue_value == "ref-1"
+
+
 def test_event_time_order_is_validated():
     with pytest.raises(ValidationError, match="end_time must be on or after"):
         CaseCreate(

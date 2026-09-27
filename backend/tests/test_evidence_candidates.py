@@ -175,6 +175,33 @@ async def test_account_candidate_confirmation_maps_to_bank_account(db):
     assert {item["entity"]["type"] for item in result["candidates"]} == {"bank_account"}
 
 
+@pytest.mark.parametrize(
+    ("clue_type", "attribute", "clue_value", "record_value", "nonmatch_value"),
+    [
+        ("transaction_id", "transaction_id", "tx-1", "tx-1.", "tx-1a"),
+        ("upi_ref", "upi_ref", "upi.ref", "upi.ref;", "upiref"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_identifier_candidates_trim_whitespace_and_trailing_punctuation(
+    db, clue_type, attribute, clue_value, record_value, nonmatch_value
+):
+    case = await add_case(db, f"{clue_type}-normalization", clue_type, f"  {clue_value}  ")
+    matching_attributes = {attribute: f" {record_value} "}
+    nonmatching_attributes = {attribute: nonmatch_value}
+    db.add_all([
+        BankingRecord(id="identifier-match", case_id=case.id, sender="acct-a", recipient="acct-b", amount=1, channel="UPI", timestamp=datetime(2026, 8, 20, 10, tzinfo=timezone.utc), attributes=matching_attributes),
+        BankingRecord(id="identifier-nonmatch", case_id=case.id, sender="acct-c", recipient="acct-d", amount=1, channel="UPI", timestamp=datetime(2026, 8, 20, 10, tzinfo=timezone.utc), attributes=nonmatching_attributes),
+    ])
+    await db.commit()
+
+    result = await discover_candidates(case, db)
+
+    matched_record_ids = {record_id for item in result["candidates"] for record_id in item["matching_record_ids"]}
+    assert case.clue_value == f"  {clue_value}  "
+    assert matched_record_ids == {"identifier-match"}
+
+
 @pytest.mark.asyncio
 async def test_legacy_case_reads_have_null_clues(db):
     case = await add_case(db, "legacy-read")

@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.case import Case
 from app.models.datasets import BankingRecord, CdrRecord, EvidenceRecordRow, IpdrRecord, ReportRecord
-from app.store import normalize_entity_value, store, to_utc
+from app.store import normalize_entity_value, normalize_reference_identifier, store, to_utc
 
 
 class CandidateError(ValueError):
@@ -91,8 +91,9 @@ async def discover_candidates(case: Case, db: AsyncSession) -> dict:
                         continue
     elif clue_type in {"transaction_id", "upi_ref"}:
         keys = ("transaction_id",) if clue_type == "transaction_id" else ("upi_ref", "upi_reference")
+        target = normalize_reference_identifier(clue_value)
         for record in banking:
-            if any(record.attributes.get(key) == clue_value for key in keys):
+            if any(normalize_reference_identifier(record.attributes.get(key, "")) == target for key in keys):
                 add("bank_account", record.sender, record, "Sender is party to the matching transaction", "Banking")
                 add("bank_account", record.recipient, record, "Recipient is party to the matching transaction", "Banking")
     elif clue_type == "amount_time":
